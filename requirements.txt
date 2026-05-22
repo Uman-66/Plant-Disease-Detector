@@ -6,4 +6,4 @@ matplotlib
 plotly
 opencv-python-headless
 scikit-learn
-PIL
+pillow
