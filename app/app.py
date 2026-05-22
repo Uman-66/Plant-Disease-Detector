@@ -1,23 +1,13 @@
-# app.py
-# Plant Disease Detector — pixel-faithful Streamlit UI
-# Run:  streamlit run app.py
-
+import streamlit as st
+import tensorflow as tf
+import numpy as np
+from PIL import Image
 import os
 import time
-import numpy as np
-import streamlit as st
-from PIL import Image
+import io
+from datetime import datetime
 
-# Optional TF import (graceful fallback to demo mode)
-try:
-    import tensorflow as tf
-    TF_OK = True
-except Exception:
-    TF_OK = False
-
-# =============================================================================
-# CONFIG
-# =============================================================================
+# ─── PAGE CONFIG ────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Plant Disease Detector",
     page_icon="🌿",
@@ -25,677 +15,866 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-MODEL_PATH = "best_model.keras"
-IMG_SIZE = (224, 224)
-
+# ─── CLASS NAMES ────────────────────────────────────────────────────────────
 CLASS_NAMES = [
-    "Apple___Apple_scab", "Apple___Black_rot", "Apple___Cedar_apple_rust", "Apple___healthy",
-    "Blueberry___healthy",
-    "Cherry_(including_sour)___Powdery_mildew", "Cherry_(including_sour)___healthy",
-    "Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot", "Corn_(maize)___Common_rust_",
-    "Corn_(maize)___Northern_Leaf_Blight", "Corn_(maize)___healthy",
-    "Grape___Black_rot", "Grape___Esca_(Black_Measles)",
-    "Grape___Leaf_blight_(Isariopsis_Leaf_Spot)", "Grape___healthy",
-    "Orange___Haunglongbing_(Citrus_greening)",
-    "Peach___Bacterial_spot", "Peach___healthy",
-    "Pepper,_bell___Bacterial_spot", "Pepper,_bell___healthy",
-    "Potato___Early_blight", "Potato___Late_blight", "Potato___healthy",
-    "Raspberry___healthy", "Soybean___healthy", "Squash___Powdery_mildew",
-    "Strawberry___Leaf_scorch", "Strawberry___healthy",
-    "Tomato___Bacterial_spot", "Tomato___Early_blight", "Tomato___Late_blight",
-    "Tomato___Leaf_Mold", "Tomato___Septoria_leaf_spot",
-    "Tomato___Spider_mites Two-spotted_spider_mite", "Tomato___Target_Spot",
-    "Tomato___Tomato_Yellow_Leaf_Curl_Virus", "Tomato___Tomato_mosaic_virus",
-    "Tomato___healthy",
+    "Apple — Apple scab","Apple — Black rot","Apple — Cedar apple rust","Apple — Healthy",
+    "Blueberry — Healthy","Cherry — Powdery mildew","Cherry — Healthy",
+    "Corn — Cercospora leaf spot / Gray leaf spot","Corn — Common rust",
+    "Corn — Northern leaf blight","Corn — Healthy","Grape — Black rot",
+    "Grape — Esca (Black measles)","Grape — Leaf blight (Isariopsis leaf spot)",
+    "Grape — Healthy","Orange — Haunglongbing (Citrus greening)",
+    "Peach — Bacterial spot","Peach — Healthy","Pepper bell — Bacterial spot",
+    "Pepper bell — Healthy","Potato — Early blight","Potato — Late blight",
+    "Potato — Healthy","Raspberry — Healthy","Soybean — Healthy",
+    "Squash — Powdery mildew","Strawberry — Leaf scorch","Strawberry — Healthy",
+    "Tomato — Bacterial spot","Tomato — Early blight","Tomato — Late blight",
+    "Tomato — Leaf mold","Tomato — Septoria leaf spot",
+    "Tomato — Spider mites (Two-spotted spider mite)","Tomato — Target spot",
+    "Tomato — Tomato Yellow Leaf Curl Virus","Tomato — Tomato mosaic virus",
+    "Tomato — Healthy",
 ]
 
-REMEDIES = {
-    "Apple___Apple_scab": "Apply fungicides like captan or myclobutanil. Prune for airflow and remove fallen leaves to break the cycle.",
-    "Apple___Black_rot": "Prune cankered wood, remove mummified fruit, and spray captan or thiophanate-methyl during the growing season.",
-    "Apple___Cedar_apple_rust": "Remove nearby junipers if possible and apply preventive fungicides (myclobutanil) starting at pink bud.",
-    "Cherry_(including_sour)___Powdery_mildew": "Apply sulfur or potassium bicarbonate sprays. Improve sunlight penetration with strategic pruning.",
-    "Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot": "Rotate crops, use resistant hybrids, and apply strobilurin fungicides at tasseling if pressure is high.",
-    "Corn_(maize)___Common_rust_": "Plant resistant hybrids. Apply mancozeb or azoxystrobin when pustules first appear on upper leaves.",
-    "Corn_(maize)___Northern_Leaf_Blight": "Use resistant hybrids, rotate with non-host crops, and apply triazole fungicides at early symptom onset.",
-    "Grape___Black_rot": "Remove mummified berries, prune for airflow, and spray mancozeb or myclobutanil from bud break through veraison.",
-    "Grape___Esca_(Black_Measles)": "Prune out infected wood in dry weather, protect pruning wounds, and avoid water stress.",
-    "Grape___Leaf_blight_(Isariopsis_Leaf_Spot)": "Improve canopy ventilation and apply copper-based fungicides preventively.",
-    "Orange___Haunglongbing_(Citrus_greening)": "No cure exists. Remove infected trees, control Asian citrus psyllid, and plant certified disease-free stock.",
-    "Peach___Bacterial_spot": "Use resistant varieties, apply copper sprays in dormancy, and avoid overhead irrigation.",
-    "Pepper,_bell___Bacterial_spot": "Use certified seed, rotate crops, and apply copper plus mancozeb at first sign of lesions.",
-    "Potato___Early_blight": "Rotate crops, mulch to prevent splash, and spray chlorothalonil or mancozeb on a 7–10 day schedule.",
-    "Potato___Late_blight": "Destroy infected plants immediately. Apply chlorothalonil, mancozeb, or systemic fungicides preventively.",
-    "Squash___Powdery_mildew": "Improve airflow, water at the base, and apply sulfur, neem oil, or potassium bicarbonate weekly.",
-    "Strawberry___Leaf_scorch": "Remove infected leaves, use drip irrigation, and apply captan or myclobutanil after harvest.",
-    "Tomato___Bacterial_spot": "Use disease-free seed, rotate, and apply copper plus mancozeb. Avoid working with wet plants.",
-    "Tomato___Early_blight": "Apply fungicides with chlorothalonil or mancozeb. Remove lower infected leaves. Mulch around plants to prevent soil splash. Ensure adequate plant nutrition.",
-    "Tomato___Late_blight": "Destroy infected plants. Apply chlorothalonil or copper. Avoid overhead watering and ensure good airflow.",
-    "Tomato___Leaf_Mold": "Improve greenhouse ventilation, reduce humidity below 85%, and apply chlorothalonil or copper sprays.",
-    "Tomato___Septoria_leaf_spot": "Remove infected lower leaves, mulch heavily, and spray chlorothalonil or copper every 7–10 days.",
-    "Tomato___Spider_mites Two-spotted_spider_mite": "Spray strong jets of water, release predatory mites, or apply insecticidal soap or neem oil.",
-    "Tomato___Target_Spot": "Improve airflow, avoid overhead watering, and apply chlorothalonil or mancozeb preventively.",
-    "Tomato___Tomato_Yellow_Leaf_Curl_Virus": "Remove infected plants, control whiteflies with insecticidal soap, and plant resistant varieties.",
-    "Tomato___Tomato_mosaic_virus": "Remove and destroy infected plants. Disinfect tools. Wash hands after handling tobacco. Plant resistant varieties.",
+TREATMENTS = {
+    "Apple — Apple scab":"Apply fungicides containing myclobutanil or captan. Remove and destroy infected leaves. Prune trees to improve air circulation. Apply dormant oil spray in early spring.",
+    "Apple — Black rot":"Prune out dead or infected wood. Apply copper-based fungicides. Remove mummified fruits. Ensure good air circulation and avoid wounding trees.",
+    "Apple — Cedar apple rust":"Apply fungicides with myclobutanil or mancozeb at bud break. Remove nearby juniper/cedar hosts if possible. Apply preventive sprays every 7–10 days during wet weather.",
+    "Apple — Healthy":"Your plant looks healthy! Maintain regular watering, fertilization, and pest monitoring to keep it thriving.",
+    "Blueberry — Healthy":"Your plant looks healthy! Continue proper watering and acidic soil maintenance.",
+    "Cherry — Powdery mildew":"Apply sulfur-based or potassium bicarbonate fungicides. Improve air circulation by pruning. Avoid overhead irrigation. Remove infected shoots promptly.",
+    "Cherry — Healthy":"Your plant looks healthy! Maintain proper care and monitor regularly.",
+    "Corn — Cercospora leaf spot / Gray leaf spot":"Plant resistant hybrids. Apply fungicides with strobilurins or triazoles at early disease onset. Rotate crops and till infected residue.",
+    "Corn — Common rust":"Plant resistant varieties. Apply fungicides (propiconazole, azoxystrobin) if disease is severe. Early season planting can help avoid peak rust periods.",
+    "Corn — Northern leaf blight":"Use resistant hybrids. Apply foliar fungicides at early tasseling if needed. Practice crop rotation and residue management.",
+    "Corn — Healthy":"Your plant looks healthy! Maintain proper spacing and monitor for pests.",
+    "Grape — Black rot":"Apply fungicides with mancozeb or myclobutanil. Remove infected berries and mummified fruit. Prune for air circulation. Apply preventive sprays before rain events.",
+    "Grape — Esca (Black measles)":"Prune infected wood and apply wound sealants. Avoid water stress. No effective chemical cure; focus on prevention and removing infected vines.",
+    "Grape — Leaf blight (Isariopsis leaf spot)":"Apply copper-based fungicides. Remove infected leaves. Improve vineyard air circulation. Avoid excessive moisture on leaves.",
+    "Grape — Healthy":"Your plant looks healthy! Monitor regularly and maintain proper vineyard practices.",
+    "Orange — Haunglongbing (Citrus greening)":"There is no cure for HLB. Remove and destroy infected trees to prevent spread. Control Asian citrus psyllid with insecticides. Plant certified disease-free nursery stock.",
+    "Peach — Bacterial spot":"Apply copper-based bactericides. Use resistant varieties. Avoid overhead irrigation. Prune for air circulation and remove infected plant material.",
+    "Peach — Healthy":"Your plant looks healthy! Continue regular care and monitoring.",
+    "Pepper bell — Bacterial spot":"Apply copper-based bactericides. Use certified disease-free seed. Avoid working with plants when wet. Remove and destroy infected plant debris.",
+    "Pepper bell — Healthy":"Your plant looks healthy! Maintain consistent watering and fertilization.",
+    "Potato — Early blight":"Apply fungicides with chlorothalonil or mancozeb. Remove infected lower leaves. Ensure adequate plant nutrition, especially nitrogen. Practice crop rotation.",
+    "Potato — Late blight":"Apply fungicides with metalaxyl or chlorothalonil immediately. Remove and destroy infected plant material. Avoid overhead irrigation. Plant resistant varieties.",
+    "Potato — Healthy":"Your plant looks healthy! Monitor for early signs of blight, especially in wet conditions.",
+    "Raspberry — Healthy":"Your plant looks healthy! Prune old canes and maintain good airflow.",
+    "Soybean — Healthy":"Your plant looks healthy! Maintain proper field management practices.",
+    "Squash — Powdery mildew":"Apply sulfur or potassium bicarbonate fungicides. Improve air circulation. Avoid overhead watering. Remove severely infected leaves.",
+    "Strawberry — Leaf scorch":"Apply fungicides with captan or myclobutanil. Remove infected leaves. Avoid overhead irrigation. Ensure good drainage and air circulation.",
+    "Strawberry — Healthy":"Your plant looks healthy! Keep runners managed and maintain good soil health.",
+    "Tomato — Bacterial spot":"Apply copper-based bactericides preventively. Avoid working with plants when wet. Use disease-free transplants. Remove and destroy infected plant material.",
+    "Tomato — Early blight":"Apply fungicides with chlorothalonil or mancozeb. Remove lower infected leaves. Mulch around plants to prevent soil splash. Ensure adequate plant nutrition.",
+    "Tomato — Late blight":"Apply fungicides with metalaxyl or chlorothalonil. Remove infected plant material immediately. Avoid overhead irrigation. Destroy all infected plants to prevent spread.",
+    "Tomato — Leaf mold":"Improve greenhouse ventilation. Apply fungicides with chlorothalonil. Reduce humidity and avoid wetting leaves. Use resistant varieties.",
+    "Tomato — Septoria leaf spot":"Apply fungicides with chlorothalonil or mancozeb. Remove infected lower leaves. Avoid overhead watering. Mulch to reduce soil splash.",
+    "Tomato — Spider mites (Two-spotted spider mite)":"Apply miticides or insecticidal soap. Increase humidity around plants. Introduce predatory mites. Remove heavily infested leaves and keep plants well-watered.",
+    "Tomato — Target spot":"Apply fungicides with azoxystrobin or chlorothalonil. Remove infected leaves. Ensure good air circulation. Avoid overhead irrigation.",
+    "Tomato — Tomato Yellow Leaf Curl Virus":"Control whitefly vectors with insecticides or reflective mulches. Remove and destroy infected plants. Use resistant varieties. Install insect-proof screens in greenhouses.",
+    "Tomato — Tomato mosaic virus":"No cure available. Remove and destroy infected plants. Disinfect tools with bleach. Control aphid vectors. Use resistant varieties and certified disease-free seeds.",
+    "Tomato — Healthy":"Your plant looks healthy! Maintain regular watering, staking, and monitoring for early pest signs.",
 }
 
-GENERIC_HEALTHY = "Your plant looks healthy. Maintain consistent watering, balanced nutrition, and good airflow. Inspect leaves weekly for early signs."
+SEVERITY = {"scab":"Moderate","rot":"High","rust":"Moderate","mildew":"Moderate","blight":"High","spot":"Moderate","mold":"Moderate","virus":"Critical","greening":"Critical","mites":"Moderate","scorch":"Moderate","measles":"High"}
+def severity_for(name):
+    n=name.lower()
+    if "healthy" in n: return "None"
+    for k,v in SEVERITY.items():
+        if k in n: return v
+    return "Moderate"
+SEVERITY_COLOR={"None":"#7fd49b","Moderate":"#e8c068","High":"#e09a3a","Critical":"#e07070"}
+SEVERITY_POS={"None":8,"Moderate":38,"High":68,"Critical":94}
 
-# =============================================================================
-# STYLING — pixel-faithful to the reference
-# =============================================================================
+# ─── EMERALD + GOLD · GLASS + AURORA CSS ────────────────────────────────────
 st.markdown("""
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-
 <style>
-:root {
-  --bg-0:#04100a; --bg-1:#081a12; --bg-2:#0b2418;
-  --panel: rgba(12, 28, 20, 0.72);
-  --panel-2: rgba(16, 36, 26, 0.55);
-  --stroke: rgba(126,226,154,0.16);
-  --stroke-strong: rgba(126,226,154,0.32);
-  --green-0:#c6ffd9; --green-1:#7ee29a; --green-2:#4fbf74; --green-3:#2f8a4f; --green-4:#155233;
-  --coral:#ff8775; --coral-2:#ffb09f; --amber:#f4b860; --amber-2:#ffd99a;
-  --text:#eef3ea; --text-dim:#a9b5a8; --text-soft:#788379;
-}
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&display=swap');
 
-html, body, [class*="css"], .stApp { font-family:'Inter', sans-serif; color:var(--text); }
+  :root {
+    --bg: #06231a;
+    --bg-2: #04170f;
+    --emerald: #0d7a5f;
+    --emerald-2: #14a37a;
+    --gold: #c9a84c;
+    --gold-2: #e8c971;
+    --cream: #f5f0e0;
+    --muted: #9ec0b0;
+    --line: rgba(201,168,76,0.18);
+    --glass: rgba(245,240,224,0.04);
+    --glass-2: rgba(245,240,224,0.07);
+  }
 
-/* ---------- Aurora background ---------- */
-.stApp {
-  background:
-    radial-gradient(1200px 700px at 88% -8%, rgba(80,200,120,0.20), transparent 60%),
-    radial-gradient(900px 700px at -10% 110%, rgba(30,140,80,0.18), transparent 60%),
-    radial-gradient(700px 500px at 50% 50%, rgba(20,80,50,0.10), transparent 70%),
-    linear-gradient(160deg,#040d08 0%,#071711 45%,#040d08 100%);
-  position:relative; overflow-x:hidden;
-}
-.stApp::before, .stApp::after {
-  content:""; position:fixed; pointer-events:none; z-index:0;
-  width:520px; height:520px; border-radius:50%; filter:blur(70px); opacity:.45;
-  animation: drift 22s ease-in-out infinite alternate;
-}
-.stApp::before { top:-160px; right:-120px; background:radial-gradient(circle, rgba(80,220,130,0.55), transparent 70%); }
-.stApp::after  { bottom:-180px; left:-140px; background:radial-gradient(circle, rgba(40,160,90,0.45), transparent 70%); animation-duration:28s; }
-@keyframes drift {
-  0%   { transform: translate(0,0) scale(1); }
-  50%  { transform: translate(40px,-30px) scale(1.08); }
-  100% { transform: translate(-30px,30px) scale(0.96); }
-}
+  html, body, [data-testid="stAppViewContainer"] {
+    background: var(--bg) !important;
+    color: var(--cream) !important;
+    font-family: 'Inter', sans-serif !important;
+    overflow-x: hidden;
+  }
+  [data-testid="stAppViewContainer"]::before {
+    content:''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(700px 500px at 10% 0%,  rgba(20,163,122,0.22), transparent 60%),
+      radial-gradient(800px 600px at 95% 10%, rgba(201,168,76,0.18), transparent 60%),
+      radial-gradient(700px 700px at 50% 110%, rgba(13,122,95,0.20), transparent 60%);
+    animation: aurora 22s ease-in-out infinite alternate;
+    filter: blur(20px);
+  }
+  @keyframes aurora {
+    0%   { transform: translate3d(0,0,0) scale(1);}
+    50%  { transform: translate3d(-30px,20px,0) scale(1.05);}
+    100% { transform: translate3d(20px,-15px,0) scale(1);}
+  }
 
-/* Floating SVG leaves */
-.deco { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
-.deco svg { position:absolute; opacity:.08; animation: sway 14s ease-in-out infinite; }
-.deco svg.l1 { top:8%;   right:4%;   width:140px; transform: rotate(20deg); }
-.deco svg.l2 { top:60%;  right:2%;   width:90px;  animation-duration:18s; transform: rotate(-15deg); }
-.deco svg.l3 { bottom:8%; left:38%;  width:110px; animation-duration:24s; opacity:.05; }
-@keyframes sway {
-  0%,100% { transform: translateY(0) rotate(var(--r,0deg)); }
-  50%     { transform: translateY(-14px) rotate(calc(var(--r,0deg) + 6deg)); }
-}
+  [data-testid="stHeader"] { background: transparent !important; }
+  [data-testid="stSidebar"] { display: none !important; }
+  .block-container { padding: 1.6rem 2.4rem 3rem 2.4rem !important; max-width: 1380px !important; position: relative; z-index: 1; }
+  #MainMenu, footer, header { visibility: hidden; }
+  [data-testid="stToolbar"] { display: none; }
 
-/* Hide Streamlit chrome */
-#MainMenu, header, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
-.block-container { padding-top:1.4rem !important; padding-bottom:2rem !important; max-width:1520px !important; position:relative; z-index:1; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-2); }
+  ::-webkit-scrollbar-thumb { background: var(--emerald); border-radius: 3px; }
 
-/* ---------- Panel ---------- */
-.panel {
-  position:relative;
-  background:
-    linear-gradient(180deg, rgba(20,42,30,0.55), rgba(8,20,14,0.55)),
-    var(--panel);
-  border:1px solid var(--stroke);
-  border-radius:20px; padding:24px 26px;
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-  box-shadow:
-    0 30px 80px -20px rgba(0,0,0,0.55),
-    0 1px 0 rgba(255,255,255,0.04) inset,
-    0 0 0 1px rgba(126,226,154,0.02) inset;
-  animation: fadeUp .65s cubic-bezier(.2,.8,.2,1) both;
-  overflow:hidden;
-}
-.panel::before {
-  content:""; position:absolute; inset:0; border-radius:inherit; padding:1px;
-  background: linear-gradient(140deg, rgba(126,226,154,0.35), rgba(126,226,154,0) 40%, rgba(126,226,154,0) 60%, rgba(126,226,154,0.18));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
-  pointer-events:none; opacity:.8;
-}
-.panel.glow::after {
-  content:""; position:absolute; inset:-1px; border-radius:inherit; pointer-events:none;
-  box-shadow: 0 0 40px rgba(126,226,154,0.10), inset 0 0 40px rgba(126,226,154,0.05);
-}
+  /* Glass base */
+  .glass {
+    background: var(--glass);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  }
 
-@keyframes fadeUp { from { opacity:0; transform:translateY(14px);} to { opacity:1; transform:none; } }
-@keyframes grow  { from { width:0; } }
-@keyframes shimmer { 0% { background-position: -200% 0;} 100% { background-position: 200% 0;} }
-@keyframes ringPop { from { stroke-dasharray:0 999;} }
-@keyframes pulseDot { 0%,100%{transform:scale(1); opacity:.9;} 50%{transform:scale(1.25); opacity:1;} }
-@keyframes float-y { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }
+  /* HERO */
+  .hero { position: relative; padding: 1.6rem 1.9rem; margin-bottom: 1.5rem; overflow: hidden; }
+  .hero::before {
+    content:''; position:absolute; inset:-1px; border-radius:20px; padding:1px;
+    background: linear-gradient(120deg, transparent 20%, rgba(201,168,76,0.55) 50%, transparent 80%);
+    background-size: 300% 100%;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    animation: shimmer 6s linear infinite;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0;} 100%{background-position:-100% 0;} }
+  .hero-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+  .hero-left { display:flex; align-items:center; gap:1.1rem; }
+  .hero-badge {
+    width:58px; height:58px; display:grid; place-items:center; font-size:1.9rem;
+    border-radius:16px;
+    background: linear-gradient(135deg, rgba(20,163,122,0.25), rgba(201,168,76,0.18));
+    border:1px solid rgba(201,168,76,0.35);
+    box-shadow: 0 0 30px rgba(20,163,122,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .hero-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 2.4rem; font-weight: 600; line-height: 1.05; letter-spacing: -0.01em;
+    background: linear-gradient(90deg, var(--cream) 0%, var(--gold-2) 70%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .hero-subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.3rem; letter-spacing: 0.01em; }
+  .hero-stats { display:flex; gap:0.5rem; flex-wrap:wrap; }
+  .stat-chip {
+    background: var(--glass-2);
+    border:1px solid var(--line);
+    border-radius:999px; padding:0.4rem 0.85rem;
+    color: var(--cream); font-size:0.74rem; font-weight:500; letter-spacing:0.04em;
+    display:inline-flex; align-items:center; gap:0.4rem;
+    backdrop-filter: blur(10px);
+  }
+  .stat-chip .dot { width:6px; height:6px; border-radius:50%; background: var(--emerald-2); box-shadow:0 0 10px var(--emerald-2); animation: pulse 2.4s ease-in-out infinite;}
+  .stat-chip.gold { border-color: rgba(201,168,76,0.35); color: var(--gold-2); }
 
-/* ---------- Hero ---------- */
-.hero-wrap { padding:6px 4px 0 4px; margin-bottom:18px; }
-.hero-badge {
-  display:inline-flex; align-items:center; gap:8px;
-  padding:6px 12px 6px 8px; border-radius:999px;
-  background: linear-gradient(90deg, rgba(126,226,154,0.16), rgba(126,226,154,0.04));
-  border:1px solid rgba(126,226,154,0.28);
-  color:var(--green-0); font-size:12px; font-weight:600; letter-spacing:.4px;
-  text-transform:uppercase;
-}
-.hero-badge .dot { width:8px; height:8px; border-radius:50%; background:var(--green-1); box-shadow:0 0 12px var(--green-1); animation: pulseDot 1.8s ease-in-out infinite; }
-.hero { display:flex; align-items:center; gap:18px; margin-top:14px; }
-.hero .leaf {
-  font-size:44px; line-height:1;
-  filter: drop-shadow(0 6px 22px rgba(80,220,130,0.45));
-  animation: float-y 4s ease-in-out infinite;
-}
-.hero h1 {
-  font-family:'Fraunces', serif; font-weight:600;
-  font-size: clamp(40px, 4.6vw, 64px);
-  line-height:1.02; letter-spacing:-1px; margin:0;
-  background: linear-gradient(180deg, #fffbe9 0%, #d8e8d4 60%, #9cc9a7 100%);
-  -webkit-background-clip:text; background-clip:text; color:transparent;
-}
-.hero-sub { color:var(--text-dim); margin:10px 0 0 4px; font-size:16px; max-width:680px; }
+  /* BYLINE (top credit) */
+  .byline {
+    display:inline-flex; align-items:center; gap:0.5rem;
+    margin-top: 0.7rem; padding: 0.32rem 0.85rem;
+    background: var(--glass); border:1px solid var(--line);
+    border-radius: 999px; font-size: 0.72rem; color: var(--muted);
+    letter-spacing: 0.06em;
+    backdrop-filter: blur(10px);
+  }
+  .byline b { color: var(--gold-2); font-weight: 600; }
+  .byline .sep { color: var(--gold); opacity: 0.6; margin: 0 0.2rem; }
 
-/* ---------- Section label ---------- */
-.label {
-  display:inline-flex; align-items:center; gap:8px;
-  color:var(--green-1); font-size:12px; font-weight:700;
-  letter-spacing:1.4px; text-transform:uppercase; margin-bottom:12px;
-}
-.label::before {
-  content:""; width:18px; height:1.5px; border-radius:2px;
-  background:linear-gradient(90deg, var(--green-1), transparent);
-}
+  /* UPLOAD CARD */
+  .upload-card { padding: 1.4rem 1.4rem 1.2rem 1.4rem; }
+  .upload-head { display:flex; align-items:center; gap:0.65rem; margin-bottom: 0.4rem; }
+  .upload-head .ico {
+    width:36px; height:36px; border-radius:11px; display:grid; place-items:center; font-size:1rem;
+    background: linear-gradient(135deg, rgba(20,163,122,0.25), rgba(201,168,76,0.15));
+    border:1px solid var(--line);
+  }
+  .upload-title { color: var(--cream); font-weight:600; font-size:1.05rem; letter-spacing:-0.01em; }
+  .upload-desc { color: var(--muted); font-size:0.82rem; margin: 0.1rem 0 1rem 0; }
 
-/* ---------- Diagnosis card ---------- */
-.diag-card { display:grid; grid-template-columns: 1fr auto; gap:32px; align-items:center; }
-.diag-name {
-  font-family:'Fraunces', serif; font-weight:600;
-  font-size: clamp(34px, 3.4vw, 52px); line-height:1.05;
-  margin:6px 0 10px 0; letter-spacing:-.5px;
-}
-.diag-name.coral {
-  background: linear-gradient(180deg, #ffb09f 0%, #ff7d6b 60%, #d85a4b 100%);
-  -webkit-background-clip:text; background-clip:text; color:transparent;
-  text-shadow: 0 0 40px rgba(255,125,107,0.25);
-}
-.diag-name.green {
-  background: linear-gradient(180deg, #c6ffd9 0%, #7ee29a 60%, #4fbf74 100%);
-  -webkit-background-clip:text; background-clip:text; color:transparent;
-  text-shadow: 0 0 40px rgba(126,226,154,0.25);
-}
-.diag-sub { color:var(--text-dim); font-size:15.5px; line-height:1.55; }
-.chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
-.chip {
-  display:inline-flex; align-items:center; gap:6px;
-  padding:5px 11px; border-radius:999px; font-size:12px; font-weight:500;
-  background: rgba(126,226,154,0.08); border:1px solid rgba(126,226,154,0.18);
-  color:#d6e9d8;
-}
-.chip.warn  { background: rgba(255,135,117,0.10); border-color: rgba(255,135,117,0.28); color:#ffc8bd; }
-.chip.amber { background: rgba(244,184,96,0.10); border-color: rgba(244,184,96,0.28); color:#ffdba6; }
+  /* Tabs */
+  .stTabs [data-baseweb="tab-list"] {
+    gap: 0.4rem; background: transparent; border-bottom: 1px solid var(--line);
+    margin-bottom: 0.8rem;
+  }
+  .stTabs [data-baseweb="tab"] {
+    background: transparent !important; color: var(--muted) !important;
+    border-radius: 10px 10px 0 0 !important; padding: 0.5rem 0.9rem !important;
+    font-size: 0.85rem !important; font-weight: 500 !important;
+  }
+  .stTabs [aria-selected="true"] {
+    color: var(--gold-2) !important;
+    border-bottom: 2px solid var(--gold) !important;
+  }
 
-/* Ring gauge */
-.ring-wrap { position:relative; width:170px; height:170px; }
-.ring-wrap svg { transform: rotate(-90deg); }
-.ring-track  { stroke: rgba(255,255,255,0.06); }
-.ring-prog   { stroke: url(#ringGrad); stroke-linecap:round; animation: ringPop 1.4s cubic-bezier(.2,.8,.2,1) both; filter: drop-shadow(0 0 8px rgba(126,226,154,0.5)); }
-.ring-prog.coral { stroke: url(#ringGradCoral); filter: drop-shadow(0 0 8px rgba(255,135,117,0.55)); }
-.ring-center {
-  position:absolute; inset:0; display:grid; place-items:center; text-align:center;
-}
-.ring-center .num {
-  font-family:'Fraunces', serif; font-size:34px; font-weight:600; color:#f3f0e2; letter-spacing:-.5px;
-}
-.ring-center .cap { font-size:11px; color:var(--text-dim); letter-spacing:1.6px; text-transform:uppercase; margin-top:2px;}
+  [data-testid="stFileUploader"] { background:transparent !important; border:none !important; padding:0 !important; }
+  [data-testid="stFileUploaderDropzone"] {
+    background: var(--glass) !important;
+    border:1.5px dashed rgba(201,168,76,0.35) !important;
+    border-radius:14px !important;
+    transition: all .3s ease; backdrop-filter: blur(10px);
+  }
+  [data-testid="stFileUploaderDropzone"]:hover {
+    border-color: var(--gold) !important;
+    background: rgba(201,168,76,0.06) !important;
+    box-shadow: 0 0 0 4px rgba(201,168,76,0.08), 0 0 30px rgba(201,168,76,0.12);
+  }
+  [data-testid="stFileUploaderDropzoneInstructions"] > div > span { color: var(--cream) !important; font-weight:500; }
+  [data-testid="stFileUploaderDropzoneInstructions"] > div > small { color: var(--muted) !important; }
+  [data-testid="stFileUploader"] section button {
+    background: linear-gradient(135deg, var(--gold), #a88a36) !important;
+    color: #1a1208 !important; border: none !important;
+    border-radius: 10px !important; font-weight: 700 !important; letter-spacing: 0.02em;
+    transition: all .2s ease;
+  }
+  [data-testid="stFileUploader"] section button:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(201,168,76,0.35); }
+  .uploadedFile { background: var(--glass-2) !important; border-radius:10px !important; border:1px solid var(--line) !important; }
 
-/* ---------- Treatment ---------- */
-.treat {
-  display:grid; grid-template-columns: 1fr auto; gap:20px; align-items:center;
-  background:
-    linear-gradient(90deg, rgba(60,160,90,0.14), rgba(60,160,90,0.02) 70%),
-    var(--panel);
-}
-.treat::before { background: linear-gradient(140deg, rgba(126,226,154,0.55), rgba(126,226,154,0) 50%); }
-.treat .accent-bar {
-  position:absolute; left:0; top:14px; bottom:14px; width:4px; border-radius:4px;
-  background: linear-gradient(180deg, var(--green-1), var(--green-3));
-  box-shadow: 0 0 18px rgba(126,226,154,0.45);
-}
-.treat h3 { color:var(--green-0); font-size:16px; font-weight:600; margin:0 0 8px 0; display:flex; align-items:center; gap:10px; letter-spacing:.2px;}
-.treat p { color:#dde3d4; line-height:1.65; margin:0; font-size:15px; }
-.shield {
-  display:inline-grid; place-items:center; width:28px; height:28px; border-radius:8px;
-  background:rgba(126,226,154,0.14); color:var(--green-1); font-size:14px;
-  border:1px solid rgba(126,226,154,0.28);
-}
-.sprout { font-size:52px; filter: drop-shadow(0 8px 22px rgba(80,200,120,0.45)); animation: float-y 5s ease-in-out infinite; }
+  .format-chips { display:flex; flex-wrap:wrap; gap:0.35rem; margin-top: 0.9rem; }
+  .format-chip {
+    font-size:0.7rem; color: var(--muted);
+    background: var(--glass); border:1px solid var(--line);
+    border-radius:6px; padding:0.22rem 0.55rem; letter-spacing:0.04em;
+  }
 
-/* ---------- Warning ---------- */
-.warn {
-  border:1px solid rgba(244,184,96,0.32);
-  background: linear-gradient(90deg, rgba(244,184,96,0.12), rgba(244,184,96,0.02));
-  border-radius:14px; padding:14px 18px; color:#ffdba6;
-  display:flex; align-items:center; gap:12px; font-size:14.5px;
-  animation: fadeUp .7s ease both;
-  position:relative; overflow:hidden;
-}
-.warn::after {
-  content:""; position:absolute; inset:0;
-  background: linear-gradient(90deg, transparent, rgba(255,217,166,0.08), transparent);
-  background-size:200% 100%; animation: shimmer 5s linear infinite;
-  pointer-events:none;
-}
+  .leaf-img-container {
+    margin-top: 0.9rem; border:1px solid var(--line); border-radius:14px;
+    overflow:hidden; animation: fadeIn 0.5s ease;
+    box-shadow: 0 10px 32px rgba(0,0,0,0.4);
+  }
+  .leaf-img-container img { width:100%; display:block; }
+  .leaf-img-label {
+    color: var(--gold-2); font-size:0.85rem; font-weight:600;
+    margin: 0.9rem 0 0.4rem 0; letter-spacing:0.06em; text-transform: uppercase;
+  }
 
-/* ---------- Top predictions ---------- */
-.top h3 {
-  color:var(--green-0); font-size:15px; font-weight:600; margin:0 0 16px 0;
-  display:flex; align-items:center; gap:10px; letter-spacing:.4px; text-transform:uppercase;
-}
-.row {
-  display:grid; grid-template-columns: 40px 1fr 160px 64px; gap:16px; align-items:center;
-  padding:12px 6px; border-radius:12px;
-  transition: background .25s ease, transform .25s ease;
-}
-.row:hover { background: rgba(126,226,154,0.05); transform: translateX(2px); }
-.row + .row { border-top:1px dashed rgba(126,226,154,0.08); }
-.idx {
-  width:34px; height:34px; border-radius:50%;
-  background: radial-gradient(circle at 30% 30%, rgba(126,226,154,0.35), rgba(47,138,79,0.15));
-  border:1px solid rgba(126,226,154,0.35);
-  color:#eaffe9; display:grid; place-items:center;
-  font-family:'JetBrains Mono', monospace; font-weight:700; font-size:13px;
-  box-shadow: inset 0 0 12px rgba(126,226,154,0.18), 0 4px 14px rgba(0,0,0,0.3);
-}
-.row:first-of-type .idx {
-  background: radial-gradient(circle at 30% 30%, #b6f3c8, #4fbf74);
-  color:#0a1f14; border-color: rgba(255,255,255,0.4);
-  box-shadow: 0 0 20px rgba(126,226,154,0.55);
-}
-.row .name { color:#e8ede1; font-size:15px; }
-.row .name small { display:block; color:var(--text-soft); font-size:12px; margin-top:2px; letter-spacing:.3px; }
-.row .pct { color:#eef3ea; font-size:14px; font-family:'JetBrains Mono', monospace; text-align:right; }
-.rowbar { height:8px; background: rgba(255,255,255,0.05); border-radius:999px; overflow:hidden; position:relative; }
-.rowbar > span {
-  display:block; height:100%;
-  background: linear-gradient(90deg, var(--green-3), var(--green-1), var(--green-0));
-  background-size:200% 100%;
-  border-radius:999px; animation: grow 1.2s cubic-bezier(.2,.8,.2,1) both, shimmer 4s linear infinite;
-  box-shadow: 0 0 12px rgba(126,226,154,0.45);
-}
+  .tips-card { margin-top: 1rem; padding: 1rem 1.1rem; }
+  .tips-title { color: var(--gold-2); font-weight:600; font-size:0.82rem; margin-bottom:0.55rem; letter-spacing:0.08em; text-transform:uppercase;}
+  .tips-list { list-style:none; padding:0; margin:0; }
+  .tips-list li { color: var(--cream); font-size:0.85rem; line-height:1.55; padding-left:1.2rem; position:relative; margin-bottom:0.35rem; opacity: 0.85;}
+  .tips-list li::before { content:'✦'; position:absolute; left:0; color: var(--gold); }
 
-/* ---------- Stats strip ---------- */
-.stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; margin-top:18px; }
-.stat {
-  padding:16px 18px; border-radius:14px;
-  background: linear-gradient(180deg, rgba(20,40,28,0.55), rgba(8,18,12,0.55));
-  border:1px solid var(--stroke);
-  position:relative; overflow:hidden;
-}
-.stat .k { font-family:'Fraunces', serif; font-size:24px; color:#f1f3e6; letter-spacing:-.5px; }
-.stat .v { font-size:11.5px; color:var(--text-dim); letter-spacing:1.4px; text-transform:uppercase; margin-top:4px; }
-.stat .ico { position:absolute; top:14px; right:14px; opacity:.5; font-size:18px; }
+  /* RESULTS */
+  .diagnosis-card { padding: 1.5rem 1.7rem; margin-bottom: 1rem; animation: slideUp 0.5s ease; position:relative; overflow:hidden; }
+  .diagnosis-card::after {
+    content:''; position:absolute; top:-40px; right:-40px; width:200px; height:200px;
+    background: radial-gradient(circle, rgba(201,168,76,0.18), transparent 70%);
+    pointer-events:none;
+  }
+  .diagnosis-label, .confidence-label {
+    color: var(--gold-2); font-size:0.72rem; font-weight:600;
+    letter-spacing:0.14em; text-transform:uppercase;
+  }
+  .diagnosis-text {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 2.1rem; font-weight: 600; color: #ff9999;
+    letter-spacing:-0.01em; margin: 0.4rem 0 0.25rem 0; line-height:1.05;
+    animation: fadeIn 0.7s ease;
+  }
+  .diagnosis-text.healthy { color: var(--emerald-2) !important; }
+  .diagnosis-sub { color: var(--muted); font-size:0.85rem; }
+  .confidence-val {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 2.4rem; font-weight: 600; color: var(--cream);
+    margin: 0.2rem 0 0.5rem 0; letter-spacing:-0.02em;
+  }
+  .confidence-bar-bg { background: rgba(0,0,0,0.3); border-radius:99px; height:6px; width:100%; overflow:hidden; border:1px solid var(--line);}
+  .confidence-bar-fill {
+    background: linear-gradient(90deg, var(--emerald-2), var(--gold));
+    border-radius:99px; height:100%;
+    animation: growBar 1.1s cubic-bezier(.22,1,.36,1) forwards;
+    box-shadow: 0 0 12px rgba(201,168,76,0.4);
+  }
 
-/* ---------- Empty state ---------- */
-.empty {
-  text-align:center; padding:72px 24px;
-  background:
-    radial-gradient(circle at 50% 30%, rgba(126,226,154,0.10), transparent 60%),
-    var(--panel);
-}
-.empty .leaf-big {
-  font-size:84px; line-height:1; display:inline-block; animation: float-y 4.5s ease-in-out infinite;
-  filter: drop-shadow(0 12px 30px rgba(80,200,120,0.45));
-}
-.empty h2 { font-family:'Fraunces', serif; font-weight:600; font-size:34px; color:#f1efe2; margin:18px 0 8px; letter-spacing:-.5px; }
-.empty p { color:var(--text-dim); max-width:520px; margin:0 auto; font-size:15px; line-height:1.6; }
-.empty .arrow { margin-top:18px; color:var(--green-1); font-size:13px; letter-spacing:1.4px; text-transform:uppercase; font-weight:600; }
+  /* SEVERITY GAUGE */
+  .gauge-wrap { margin-top: 1rem; }
+  .gauge-track {
+    position: relative; height: 8px; border-radius: 999px;
+    background: linear-gradient(90deg, #7fd49b 0%, #e8c068 35%, #e09a3a 70%, #e07070 100%);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.4), 0 0 14px rgba(201,168,76,0.18);
+    border: 1px solid var(--line);
+  }
+  .gauge-marker {
+    position: absolute; top: 50%;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--cream); border: 2px solid var(--gold);
+    box-shadow: 0 0 14px rgba(245,240,224,0.7), 0 2px 8px rgba(0,0,0,0.5);
+    transform: translate(-50%, -50%);
+    animation: markerIn 1.1s cubic-bezier(.22,1,.36,1);
+  }
+  @keyframes markerIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.2);} to { opacity:1; transform: translate(-50%, -50%) scale(1);} }
+  .gauge-scale {
+    display:flex; justify-content:space-between; margin-top:0.55rem;
+    font-size: 0.62rem; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .gauge-caption { color: var(--muted); font-size: 0.82rem; margin-top: 0.6rem;}
+  .gauge-caption b { font-weight: 600; }
 
-/* ---------- Footer ---------- */
-.footer {
-  text-align:center; color:var(--text-soft); font-size:12.5px;
-  margin-top:24px; padding-top:18px; letter-spacing:.4px;
-  border-top:1px solid rgba(126,226,154,0.08);
-}
-.footer .dot { color:rgba(126,226,154,0.25); margin:0 10px; }
+  .treatment-card {
+    padding: 1.2rem 1.4rem; margin-bottom:1rem; animation: slideUp 0.6s ease;
+    border-left: 3px solid var(--gold) !important;
+  }
+  .treatment-title { color: var(--gold-2); font-weight:600; font-size:0.78rem; margin-bottom:0.5rem; letter-spacing:0.12em; text-transform:uppercase;}
+  .treatment-text { color: var(--cream); font-size:0.93rem; line-height:1.7; opacity:0.92;}
 
-/* ---------- File uploader ---------- */
-[data-testid="stFileUploader"] {
-  background: linear-gradient(180deg, rgba(20,40,28,0.45), rgba(8,18,12,0.45));
-  border:1.5px dashed rgba(126,226,154,0.32);
-  border-radius:16px; padding:26px 16px;
-  transition: all .3s ease; position:relative; overflow:hidden;
-}
-[data-testid="stFileUploader"]::before {
-  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
-  background: radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(126,226,154,0.10), transparent 60%);
-  opacity:0; transition: opacity .3s;
-}
-[data-testid="stFileUploader"]:hover {
-  border-color: rgba(126,226,154,0.6);
-  background: linear-gradient(180deg, rgba(30,55,40,0.55), rgba(12,28,18,0.55));
-  transform: translateY(-1px);
-  box-shadow: 0 16px 40px -16px rgba(126,226,154,0.25);
-}
-[data-testid="stFileUploader"]:hover::before { opacity:1; }
-[data-testid="stFileUploader"] section { background:transparent !important; border:none !important; padding:0 !important; }
-[data-testid="stFileUploader"] section > div:first-child { color:var(--text); font-weight:500; }
-[data-testid="stFileUploader"] small { color:var(--text-soft); }
-[data-testid="stFileUploader"] button { display:none !important; }
-[data-testid="stFileUploaderDropzoneInstructions"] svg { color:var(--green-1) !important; filter: drop-shadow(0 0 8px rgba(126,226,154,0.4)); }
-[data-testid="stFileUploaderFile"] {
-  background: linear-gradient(180deg, rgba(20,40,28,0.7), rgba(8,18,12,0.7));
-  border:1px solid var(--stroke); border-radius:12px; margin-top:14px; padding:8px 10px;
-}
+  .warning-banner {
+    padding:0.85rem 1.1rem; color: var(--gold-2); font-size:0.82rem; margin-bottom:1rem;
+    display:flex; align-items:flex-start; gap:0.6rem; animation: slideUp 0.7s ease;
+    border-left: 3px solid var(--gold) !important;
+  }
 
-/* Image */
-[data-testid="stImage"] img {
-  border-radius:14px; border:1px solid var(--stroke);
-  box-shadow: 0 22px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(126,226,154,0.05) inset;
-  transition: transform .4s ease;
-}
-[data-testid="stImage"]:hover img { transform: scale(1.015); }
+  .predictions-card { padding:1.2rem 1.4rem 0.6rem 1.4rem; animation: slideUp 0.8s ease; }
+  .predictions-title { color: var(--gold-2); font-weight:600; font-size:0.78rem; margin-bottom:1rem; letter-spacing:0.12em; text-transform:uppercase;}
+  .pred-rank {
+    background: linear-gradient(135deg, rgba(20,163,122,0.3), rgba(201,168,76,0.2));
+    color: var(--gold-2); width:30px; height:30px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:0.78rem; font-weight:700; border:1px solid var(--line);
+    font-family: 'Cormorant Garamond', serif;
+  }
+  .pred-name { color: var(--cream); font-size:0.9rem; padding-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .pred-bar-bg { background: rgba(0,0,0,0.3); border-radius:99px; height:5px; width:100%; overflow:hidden; margin-top:5px; border:1px solid var(--line);}
+  .pred-bar-fill { background: linear-gradient(90deg, var(--emerald-2), var(--gold)); border-radius:99px; height:100%; animation: growBar 1s ease forwards;}
+  .pred-pct { color: var(--gold-2); font-size:0.9rem; font-weight:700; text-align:right; padding-top:6px; font-family:'Cormorant Garamond', serif;}
 
-/* Spinner */
-.stSpinner > div { border-top-color: var(--green-1) !important; }
-.stFileUploader label { display:none !important; }
+  /* HISTORY */
+  .history-card { padding: 1rem 1.1rem; margin-top: 1rem; }
+  .history-title { color: var(--gold-2); font-weight:600; font-size:0.78rem; margin-bottom:0.7rem; letter-spacing:0.12em; text-transform:uppercase;}
+  .history-empty { color: var(--muted); font-size:0.82rem; opacity:0.7; text-align:center; padding:0.4rem;}
+  .history-item { display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0.2rem; border-bottom:1px dashed var(--line); font-size:0.82rem;}
+  .history-item:last-child { border-bottom: none; }
+  .history-item .name { color: var(--cream); }
+  .history-item .pct { font-family: 'Cormorant Garamond', serif; font-weight:600; }
 
-/* Responsive */
-@media (max-width: 980px) {
-  .diag-card { grid-template-columns: 1fr; }
-  .ring-wrap { margin: 0 auto; }
-  .stats { grid-template-columns: repeat(2, 1fr); }
-  .row { grid-template-columns: 36px 1fr 90px 56px; }
-}
+  /* CREDITS (bottom signature) */
+  .credits {
+    margin-top: 1.6rem; padding: 1.5rem 1.2rem 1.2rem 1.2rem; text-align:center;
+    border-top: 1px solid var(--line); position: relative;
+  }
+  .credits-label {
+    color: var(--gold-2); font-size: 0.7rem; font-weight: 600;
+    letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 0.7rem;
+    opacity: 0.85;
+  }
+  .credits-names {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.55rem; font-weight: 500; letter-spacing: 0.02em;
+    background: linear-gradient(90deg, var(--cream) 0%, var(--gold-2) 50%, var(--cream) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .credits-sep { color: var(--gold); margin: 0 0.9rem; opacity: 0.6; font-weight: 300; }
+
+  .app-footer {
+    border-top:1px solid var(--line); margin-top:1.4rem; padding-top:1rem;
+    display:flex; gap:1.4rem; justify-content:center; flex-wrap:wrap;
+  }
+  .footer-item { color: var(--muted); font-size:0.76rem; display:flex; align-items:center; gap:0.35rem; opacity:0.8;}
+
+  .empty-state { text-align:center; padding:3.5rem 1rem; }
+  .empty-icon { font-size:3.6rem; margin-bottom:0.9rem; opacity:0.85; filter: drop-shadow(0 0 20px rgba(201,168,76,0.3));}
+  .empty-text {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.4rem; color: var(--cream); font-weight:500;
+  }
+  .empty-sub { font-size:0.85rem; color: var(--muted); margin-top:0.5rem;}
+
+  .stSpinner > div { border-top-color: var(--gold) !important; }
+
+  .stDownloadButton button, .stButton button {
+    background: var(--glass-2) !important; color: var(--cream) !important;
+    border:1px solid var(--line) !important; border-radius:10px !important;
+    font-weight:500 !important; transition: all .2s ease;
+    backdrop-filter: blur(10px);
+  }
+  .stDownloadButton button:hover, .stButton button:hover {
+    border-color: var(--gold) !important; color: var(--gold-2) !important;
+    transform: translateY(-1px); box-shadow: 0 6px 20px rgba(201,168,76,0.18);
+  }
+
+  /* camera input */
+  [data-testid="stCameraInput"] button {
+    background: linear-gradient(135deg, var(--emerald), var(--emerald-2)) !important;
+    color: var(--cream) !important; border:none !important;
+    border-radius: 10px !important; font-weight: 600 !important;
+  }
+
+  .divider {
+    height:1px; margin: 1rem 0;
+    background: linear-gradient(90deg, transparent, var(--line), transparent);
+  }
+
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  @keyframes slideUp { from { opacity:0; transform: translateY(14px); } to { opacity:1; transform: translateY(0); } }
+  @keyframes growBar { from { width:0%; } }
+  @keyframes pulse { 0%,100% { opacity:1;} 50% { opacity:0.4;} }
+  .analyzing-pulse { animation: pulse 1.4s ease-in-out infinite; color: var(--gold-2); font-size:0.88rem; text-align:center; margin-top:0.5rem; letter-spacing:0.06em;}
+
+  /* DRIFTING LEAF PARTICLES */
+  .leaf-field {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+  }
+  .leaf-field span {
+    position: absolute; display: block;
+    opacity: 0.12; filter: drop-shadow(0 0 6px rgba(201,168,76,0.3));
+    animation: drift linear infinite;
+    top: -10vh;
+  }
+  @keyframes drift {
+    0%   { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+    10%  { opacity: 0.16; }
+    90%  { opacity: 0.12; }
+    100% { transform: translateY(120vh) translateX(60px) rotate(360deg); opacity: 0; }
+  }
 </style>
-
-<div class="deco">
-  <svg class="l1" viewBox="0 0 64 64" fill="#7ee29a"><path d="M32 4C16 12 8 26 8 42c0 10 6 18 16 18 16 0 32-16 32-40 0-6-2-12-6-16-6 6-14 6-18 0z"/></svg>
-  <svg class="l2" viewBox="0 0 64 64" fill="#7ee29a"><path d="M32 4C16 12 8 26 8 42c0 10 6 18 16 18 16 0 32-16 32-40 0-6-2-12-6-16-6 6-14 6-18 0z"/></svg>
-  <svg class="l3" viewBox="0 0 64 64" fill="#7ee29a"><path d="M32 4C16 12 8 26 8 42c0 10 6 18 16 18 16 0 32-16 32-40 0-6-2-12-6-16-6 6-14 6-18 0z"/></svg>
-</div>
-
-<svg width="0" height="0" style="position:absolute;">
-  <defs>
-    <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%"  stop-color="#c6ffd9"/>
-      <stop offset="50%" stop-color="#7ee29a"/>
-      <stop offset="100%" stop-color="#2f8a4f"/>
-    </linearGradient>
-    <linearGradient id="ringGradCoral" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%"  stop-color="#ffd0c6"/>
-      <stop offset="50%" stop-color="#ff8775"/>
-      <stop offset="100%" stop-color="#c0533f"/>
-    </linearGradient>
-  </defs>
-</svg>
 """, unsafe_allow_html=True)
 
-# =============================================================================
-# MODEL & PREDICTION
-# =============================================================================
+
+# ─── DRIFTING LEAF PARTICLES ────────────────────────────────────────────────
+_particles = "".join([
+    f'<span style="left:{(i*7.3) % 100:.1f}%; '
+    f'animation-duration:{15 + (i*1.7) % 18:.1f}s; '
+    f'animation-delay:-{(i*2.1) % 20:.1f}s; '
+    f'font-size:{0.9 + (i % 5)*0.25:.2f}rem;">🍃</span>'
+    for i in range(18)
+])
+st.markdown(f'<div class="leaf-field">{_particles}</div>', unsafe_allow_html=True)
+
+
+# ─── MODEL LOADING ──────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_model():
-    if not TF_OK or not os.path.exists(MODEL_PATH):
-        return None
-    try:
-        return tf.keras.models.load_model(MODEL_PATH)
-    except Exception:
-        return None
+    base = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base, "..", "models", "best_model .keras"),
+        os.path.join(base, "..", "models", "plant_disease_model.keras"),
+        os.path.join(base, "..", "models", "basiccnn", "best_model.keras"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return tf.keras.models.load_model(path)
+    raise FileNotFoundError("No model file found in models/ directory.")
 
-def preprocess(img: Image.Image) -> np.ndarray:
-    img = img.convert("RGB").resize(IMG_SIZE)
-    arr = np.asarray(img, dtype=np.float32)
-    return np.expand_dims(arr, axis=0)
 
-def predict(img: Image.Image):
-    model = load_model()
-    if model is None:
-        rng = np.random.default_rng(abs(hash(img.tobytes()[:64])) % (2**32))
-        bias = np.ones(len(CLASS_NAMES)) * 0.5
-        bias[CLASS_NAMES.index("Tomato___Early_blight")] = 18.0
-        bias[CLASS_NAMES.index("Tomato___Late_blight")] = 1.2
-        bias[CLASS_NAMES.index("Tomato___Septoria_leaf_spot")] = 0.6
-        probs = rng.dirichlet(bias)
-        time.sleep(0.4)
-        return probs
-    x = preprocess(img)
-    probs = model.predict(x, verbose=0)[0]
-    return probs
+def predict(image: Image.Image, model):
+    img = image.convert("RGB").resize((224, 224))
+    arr = np.expand_dims(np.array(img, dtype=np.float32), 0)
+    preds = model.predict(arr, verbose=0)[0]
+    top3_idx = preds.argsort()[-3:][::-1]
+    return [(CLASS_NAMES[i], float(preds[i]) * 100) for i in top3_idx]
 
-def format_class(name: str):
-    if "___" in name:
-        crop, disease = name.split("___", 1)
-    else:
-        crop, disease = name, ""
-    crop = crop.replace("_", " ").replace("(", "").replace(")", "").strip()
-    disease = disease.replace("_", " ").strip()
-    if disease.lower() == "healthy":
-        return crop, "Healthy"
-    return crop, disease.capitalize()
 
-def is_healthy(name: str) -> bool:
-    return name.endswith("___healthy")
+# ─── SAMPLE LEAVES ──────────────────────────────────────────────────────────
+def list_samples():
+    base = os.path.dirname(os.path.abspath(__file__))
+    candidates = [os.path.join(base, "samples"), os.path.join(base, "..", "samples")]
+    for d in candidates:
+        if os.path.isdir(d):
+            files = sorted([f for f in os.listdir(d) if f.lower().endswith((".jpg",".jpeg",".png",".bmp",".webp",".tiff"))])[:4]
+            return [(os.path.join(d, f), os.path.splitext(f)[0].replace("_"," ").title()) for f in files]
+    return []
 
-def get_remedy(name: str) -> str:
-    if is_healthy(name):
-        return GENERIC_HEALTHY
-    return REMEDIES.get(name, "Consult a local agricultural extension for treatment guidance specific to your region and variety.")
 
-def severity_chip(conf: float, healthy: bool) -> str:
-    if healthy:
-        return '<span class="chip">✓ No action needed</span>'
-    if conf >= 85: level, cls = "High severity", "warn"
-    elif conf >= 60: level, cls = "Moderate severity", "amber"
-    else: level, cls = "Low confidence", "amber"
-    return f'<span class="chip {cls}">● {level}</span>'
+# ─── PDF REPORT ─────────────────────────────────────────────────────────────
+def build_pdf_report(image: Image.Image, plant, disease, top_pct, severity, treatment, top3):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
 
-def ring_svg(pct: float, healthy: bool) -> str:
-    pct = max(0, min(100, pct))
-    R = 68; C = 2 * 3.14159 * R
-    dash = C * pct / 100
-    klass = "ring-prog" if healthy else "ring-prog coral"
-    return f'''
-    <div class="ring-wrap">
-      <svg width="170" height="170" viewBox="0 0 170 170">
-        <circle class="ring-track" cx="85" cy="85" r="{R}" stroke-width="10" fill="none"/>
-        <circle class="{klass}" cx="85" cy="85" r="{R}" stroke-width="10" fill="none"
-                stroke-dasharray="{dash:.2f} {C:.2f}"/>
-      </svg>
-      <div class="ring-center">
-        <div>
-          <div class="num">{pct:.1f}%</div>
-          <div class="cap">Confidence</div>
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    W, H = A4
+
+    # Background
+    c.setFillColorRGB(0.024, 0.137, 0.102)
+    c.rect(0, 0, W, H, fill=1, stroke=0)
+
+    # Gold accent bar
+    c.setFillColorRGB(0.788, 0.659, 0.298)
+    c.rect(0, H-12, W, 12, fill=1, stroke=0)
+
+    # Header
+    c.setFillColorRGB(0.96, 0.94, 0.88)
+    c.setFont("Helvetica-Bold", 22)
+    c.drawString(25*mm, H-30*mm, "Plant Disease Diagnosis Report")
+    c.setFillColorRGB(0.62, 0.75, 0.69)
+    c.setFont("Helvetica", 10)
+    c.drawString(25*mm, H-37*mm, f"Generated {datetime.now().strftime('%B %d, %Y · %H:%M')}")
+
+    # Leaf thumbnail
+    thumb = image.convert("RGB").copy()
+    thumb.thumbnail((600, 600))
+    img_reader = ImageReader(thumb)
+    iw, ih = thumb.size
+    ratio = min(60*mm / iw, 60*mm / ih)
+    dw, dh = iw*ratio, ih*ratio
+    img_x = W - 25*mm - dw
+    img_y = H - 50*mm - dh
+    c.setStrokeColorRGB(0.788, 0.659, 0.298)
+    c.setLineWidth(1)
+    c.rect(img_x-2, img_y-2, dw+4, dh+4, fill=0, stroke=1)
+    c.drawImage(img_reader, img_x, img_y, dw, dh)
+
+    # Diagnosis box
+    y = H - 60*mm
+    c.setFillColorRGB(0.788, 0.659, 0.298)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(25*mm, y, "DIAGNOSIS")
+    y -= 8*mm
+    c.setFillColorRGB(0.96, 0.94, 0.88)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(25*mm, y, f"{plant}")
+    y -= 7*mm
+    c.setFillColorRGB(0.5, 0.85, 0.6) if "Healthy" in disease else c.setFillColorRGB(1.0, 0.6, 0.6)
+    c.drawString(25*mm, y, f"{disease}")
+
+    y -= 16*mm
+    c.setFillColorRGB(0.788, 0.659, 0.298); c.setFont("Helvetica-Bold", 9); c.drawString(25*mm, y, "CONFIDENCE")
+    c.drawString(70*mm, y, "SEVERITY")
+    y -= 7*mm
+    c.setFillColorRGB(0.96, 0.94, 0.88); c.setFont("Helvetica-Bold", 16)
+    c.drawString(25*mm, y, f"{top_pct:.1f}%")
+    c.drawString(70*mm, y, severity)
+
+    # Confidence bar
+    y -= 8*mm
+    bar_w, bar_h = 60*mm, 3*mm
+    c.setFillColorRGB(0.05, 0.1, 0.08); c.rect(25*mm, y, bar_w, bar_h, fill=1, stroke=0)
+    c.setFillColorRGB(0.788, 0.659, 0.298)
+    c.rect(25*mm, y, bar_w*(top_pct/100), bar_h, fill=1, stroke=0)
+
+    # Treatment
+    y -= 18*mm
+    c.setFillColorRGB(0.788, 0.659, 0.298); c.setFont("Helvetica-Bold", 9); c.drawString(25*mm, y, "RECOMMENDED TREATMENT")
+    y -= 8*mm
+    c.setFillColorRGB(0.96, 0.94, 0.88); c.setFont("Helvetica", 10)
+    from textwrap import wrap
+    for line in wrap(treatment, width=95):
+        c.drawString(25*mm, y, line); y -= 5*mm
+
+    # Top 3
+    y -= 10*mm
+    c.setFillColorRGB(0.788, 0.659, 0.298); c.setFont("Helvetica-Bold", 9); c.drawString(25*mm, y, "TOP 3 PREDICTIONS")
+    y -= 8*mm
+    for i,(n,p) in enumerate(top3, 1):
+        c.setFillColorRGB(0.96, 0.94, 0.88); c.setFont("Helvetica", 10)
+        c.drawString(25*mm, y, f"{i}.  {n}")
+        c.setFillColorRGB(0.788, 0.659, 0.298); c.setFont("Helvetica-Bold", 10)
+        c.drawRightString(W-25*mm, y, f"{p:.1f}%")
+        y -= 6*mm
+
+    # Footer
+    c.setFillColorRGB(0.62, 0.75, 0.69); c.setFont("Helvetica-Oblique", 8)
+    c.drawString(25*mm, 18*mm, "Plant Disease Detector · MobileNetV2 · PlantVillage Dataset · 38 classes · 96.7% accuracy")
+    c.drawString(25*mm, 14*mm, "This is an AI prediction — confirm critical decisions with a certified plant pathologist.")
+    c.setFillColorRGB(0.788, 0.659, 0.298); c.setFont("Helvetica-Bold", 8)
+    c.drawString(25*mm, 9*mm, "Crafted by Muhammad Rumman Aslam  ·  Zunairah Abdul Rehman")
+    c.setFillColorRGB(0.788, 0.659, 0.298); c.rect(0, 0, W, 4, fill=1, stroke=0)
+
+    c.showPage(); c.save()
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ─── SESSION STATE ──────────────────────────────────────────────────────────
+if "history" not in st.session_state:
+    st.session_state.history = []
+if "sample_choice" not in st.session_state:
+    st.session_state.sample_choice = None
+
+
+# ─── HEADER ─────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="glass hero">
+  <div class="hero-row">
+    <div class="hero-left">
+      <div class="hero-badge">🌿</div>
+      <div>
+        <div class="hero-title">Plant Disease Detector</div>
+        <div class="hero-subtitle">An elegant AI diagnosis for your garden — 38 disease classes, MobileNetV2</div>
+        <div class="byline">
+          ✦ Crafted by <b>Muhammad Rumman Aslam</b> <span class="sep">·</span> <b>Zunairah Abdul Rehman</b>
         </div>
       </div>
     </div>
-    '''
+    <div class="hero-stats">
+      <span class="stat-chip"><span class="dot"></span>Model Online</span>
+      <span class="stat-chip gold">✦ 96.7% Accuracy</span>
+      <span class="stat-chip">🧠 MobileNetV2</span>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-# =============================================================================
-# LAYOUT
-# =============================================================================
-left, right = st.columns([1, 2.55], gap="large")
 
-# ---------- LEFT ----------
-with left:
-    st.markdown('<div class="panel glow">', unsafe_allow_html=True)
-    st.markdown('<div class="label">Upload a leaf image</div>', unsafe_allow_html=True)
-    uploaded = st.file_uploader(
-        " ",
-        type=["jpg", "jpeg", "png", "bmp", "webp", "tiff"],
-        label_visibility="collapsed",
-    )
-    st.markdown(
-        '<div style="color:var(--text-soft); font-size:12px; margin-top:12px; letter-spacing:.4px;">'
-        'JPG · JPEG · PNG · BMP · WEBP · TIFF</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
+# ─── LAYOUT ─────────────────────────────────────────────────────────────────
+left_col, right_col = st.columns([1, 1.55], gap="large")
 
-    if uploaded is not None:
-        try:
-            img = Image.open(uploaded)
-            st.markdown('<div class="panel" style="margin-top:18px;">', unsafe_allow_html=True)
-            st.markdown('<div class="label">Uploaded Leaf</div>', unsafe_allow_html=True)
-            st.image(img, use_container_width=True)
+# ── LEFT: input
+with left_col:
+    st.markdown("""
+    <div class="glass upload-card">
+      <div class="upload-head">
+        <div class="ico">🌱</div>
+        <div>
+          <div class="upload-title">Capture a Leaf</div>
+          <div class="upload-desc">Upload, snap a photo, or try a sample</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab_upload, tab_camera, tab_sample = st.tabs(["📁 Upload", "📷 Camera", "✦ Samples"])
+
+    uploaded = None
+    with tab_upload:
+        uploaded = st.file_uploader(
+            label="Upload leaf image",
+            type=["jpg", "jpeg", "png", "bmp", "webp", "tiff"],
+            accept_multiple_files=False,
+            label_visibility="collapsed",
+            key="file_uploader",
+        )
+        st.markdown("""
+          <div class="format-chips">
+            <span class="format-chip">JPG</span><span class="format-chip">PNG</span>
+            <span class="format-chip">BMP</span><span class="format-chip">WEBP</span>
+            <span class="format-chip">TIFF</span>
+          </div>
+        """, unsafe_allow_html=True)
+
+    with tab_camera:
+        cam = st.camera_input("Take a leaf photo", label_visibility="collapsed", key="cam_input")
+        if cam is not None and uploaded is None:
+            uploaded = cam
+
+    with tab_sample:
+        samples = list_samples()
+        if not samples:
             st.markdown(
-                f'<div style="display:flex;justify-content:space-between;color:var(--text-soft);font-size:12px;margin-top:10px;letter-spacing:.3px;">'
-                f'<span>{img.size[0]} × {img.size[1]} px</span><span>{img.mode}</span></div>',
+                '<div class="history-empty">'
+                'No sample leaves found. Add 2–4 images to a samples/ folder '
+                'next to app.py to populate this gallery.'
+                '</div>',
                 unsafe_allow_html=True,
             )
-            st.markdown('</div>', unsafe_allow_html=True)
-        except Exception:
-            img = None
+        else:
+            cols = st.columns(min(len(samples), 4))
+            for i,(path,name) in enumerate(samples):
+                with cols[i]:
+                    st.image(path, use_container_width=True)
+                    if st.button(name, key=f"sample_{i}", use_container_width=True):
+                        st.session_state.sample_choice = path
+            if st.session_state.sample_choice and uploaded is None:
+                uploaded = st.session_state.sample_choice   # pass the path string
+
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+    # Normalize input → PIL image (fixes sample-click crash)
+    image_for_display = None
+    pil_image = None
+    if uploaded is not None:
+        try:
+            pil_image = Image.open(uploaded)
+            pil_image.load()
+            image_for_display = pil_image.copy()
+        except Exception as e:
+            st.error(f"Could not read image: {e}")
+            uploaded = None
+            pil_image = None
+            image_for_display = None
+
+    # Image preview + tips
+    if uploaded and image_for_display is not None:
+        st.markdown('<div class="leaf-img-label">Uploaded Leaf</div>', unsafe_allow_html=True)
+        st.markdown('<div class="leaf-img-container">', unsafe_allow_html=True)
+        st.image(image_for_display, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     else:
-        img = None
+        st.markdown("""
+        <div class="glass tips-card">
+          <div class="tips-title">Capture Tips</div>
+          <ul class="tips-list">
+            <li>Use natural daylight, avoid harsh shadows</li>
+            <li>Center one leaf in the frame</li>
+            <li>Plain background works best</li>
+            <li>Keep the camera steady and in focus</li>
+          </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Tip card
-    st.markdown(
-        '<div class="panel" style="margin-top:18px; padding:18px 20px;">'
-        '<div class="label">Pro tip</div>'
-        '<div style="color:var(--text-dim); font-size:13.5px; line-height:1.55;">'
-        'Capture leaves in natural daylight against a plain background. Focus on a single leaf showing the symptoms clearly.'
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
+    # History
+    if st.session_state.history:
+        st.markdown('<div class="glass history-card">', unsafe_allow_html=True)
+        st.markdown('<div class="history-title">Recent Scans</div>', unsafe_allow_html=True)
+        for h in reversed(st.session_state.history[-5:]):
+            sev_c = SEVERITY_COLOR.get(h["severity"], "#c9a84c")
+            st.markdown(
+                f'<div class="history-item">'
+                f'<span class="name">{h["plant"]} — {h["disease"]}</span>'
+                f'<span class="pct" style="color:{sev_c}">{h["confidence"]:.0f}%</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------- RIGHT ----------
-with right:
-    st.markdown(
-        '<div class="hero-wrap">'
-        '<span class="hero-badge"><span class="dot"></span>Live · Deep Learning Diagnosis</span>'
-        '<div class="hero">'
-        '<span class="leaf">🌿</span>'
-        '<h1>Plant Disease Detector</h1>'
-        '</div>'
-        '<div class="hero-sub">Upload a leaf image and get an instant, vision-model-powered diagnosis with treatment guidance trusted by growers worldwide.</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    if img is None:
-        st.markdown(
-            '<div class="panel empty">'
-            '<div class="leaf-big">🍃</div>'
-            '<h2>Awaiting a leaf</h2>'
-            '<p>Drop a leaf image into the panel on the left and the model will analyze symptoms, confidence and treatment within a moment.</p>'
-            '<div class="arrow">← start by uploading</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Stats strip even on empty
-        st.markdown(
-            '<div class="stats">'
-            '<div class="stat"><div class="ico">🧠</div><div class="k">96.7%</div><div class="v">Model Accuracy</div></div>'
-            '<div class="stat"><div class="ico">🌱</div><div class="k">38</div><div class="v">Disease Classes</div></div>'
-            '<div class="stat"><div class="ico">📚</div><div class="k">54k+</div><div class="v">Training Images</div></div>'
-            '<div class="stat"><div class="ico">⚡</div><div class="k">~0.4s</div><div class="v">Avg Inference</div></div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+# ── RIGHT: results
+with right_col:
+    if uploaded is None or pil_image is None:
+        st.markdown("""
+        <div class="glass empty-state">
+          <div class="empty-icon">🍃</div>
+          <div class="empty-text">Awaiting your leaf</div>
+          <div class="empty-sub">Upload, capture, or pick a sample to begin</div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         with st.spinner(""):
-            probs = predict(img)
+            st.markdown('<div class="analyzing-pulse">✦ Analyzing leaf ✦</div>', unsafe_allow_html=True)
+            time.sleep(0.3)
+            try:
+                model = load_model()
+                top3 = predict(pil_image, model)
+            except Exception as e:
+                st.error(f"Error: {e}")
+                st.stop()
 
-        top_idx = int(np.argmax(probs))
-        top_name = CLASS_NAMES[top_idx]
-        crop, disease = format_class(top_name)
-        confidence = float(probs[top_idx]) * 100
-        healthy = is_healthy(top_name)
-        diag_class = "green" if healthy else "coral"
-        title_text = f"{crop} — {disease}"
+        top_name, top_pct = top3[0]
+        is_healthy = "healthy" in top_name.lower()
+        treatment = TREATMENTS.get(top_name, "Consult a local plant pathologist for tailored advice.")
+        severity = severity_for(top_name)
+        sev_color = SEVERITY_COLOR.get(severity, "#c9a84c")
+        sev_pos = SEVERITY_POS.get(severity, 50)
+        diag_class = "healthy" if is_healthy else ""
+        plant, _, disease = top_name.partition(" — ")
+        disease = disease or top_name
 
-        # Diagnosis + ring
-        st.markdown(
-            f'<div class="panel diag-card glow">'
-            f'  <div>'
-            f'    <div class="label">Diagnosis</div>'
-            f'    <div class="diag-name {diag_class}">{title_text}</div>'
-            f'    <div class="diag-sub">'
-            f'      {"Your plant looks healthy and well-cared for. Maintain your current routine." if healthy else f"Your plant shows signs consistent with <b style=\"color:#ffc8bd\">{disease}</b>. Review the recommended treatment below."}'
-            f'    </div>'
-            f'    <div class="chip-row">'
-            f'      <span class="chip">🌿 {crop}</span>'
-            f'      {severity_chip(confidence, healthy)}'
-            f'      <span class="chip">⏱ Analyzed just now</span>'
-            f'    </div>'
-            f'  </div>'
-            f'  {ring_svg(confidence, healthy)}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        # Save history
+        snap = {"plant": plant or "Plant", "disease": disease, "confidence": top_pct, "severity": severity}
+        if not st.session_state.history or st.session_state.history[-1] != snap:
+            st.session_state.history.append(snap)
+
+        # Diagnosis card
+        st.markdown(f"""
+        <div class="glass diagnosis-card">
+          <div style="display:flex; justify-content:space-between; gap:1.5rem; flex-wrap:wrap;">
+            <div style="flex:1.4; min-width:240px;">
+              <div class="diagnosis-label">✦ Diagnosis · {plant or "Plant"}</div>
+              <div class="diagnosis-text {diag_class}">{disease}</div>
+              <div class="diagnosis-sub">Identified from the uploaded leaf image</div>
+              <div class="gauge-wrap">
+                <div class="gauge-track"><div class="gauge-marker" style="left:{sev_pos}%;"></div></div>
+                <div class="gauge-scale"><span>None</span><span>Moderate</span><span>High</span><span>Critical</span></div>
+                <div class="gauge-caption">Severity · <b style="color:{sev_color}">{severity}</b></div>
+              </div>
+            </div>
+            <div style="flex:1; min-width:180px;">
+              <div class="confidence-label">Confidence</div>
+              <div class="confidence-val">{top_pct:.1f}%</div>
+              <div class="confidence-bar-bg"><div class="confidence-bar-fill" style="width:{top_pct}%"></div></div>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         # Treatment
-        remedy = get_remedy(top_name)
-        treat_title = "Care Recommendation" if healthy else "Recommended Treatment"
-        sprout = "🌱" if healthy else "🌿"
-        st.markdown(
-            f'<div class="panel treat" style="margin-top:18px;">'
-            f'  <div class="accent-bar"></div>'
-            f'  <div>'
-            f'    <h3><span class="shield">🛡</span> {treat_title}</h3>'
-            f'    <p>{remedy}</p>'
-            f'  </div>'
-            f'  <div class="sprout">{sprout}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        title_label = "Care Recommendation" if is_healthy else "Recommended Treatment"
+        st.markdown(f"""
+        <div class="glass treatment-card">
+          <div class="treatment-title">✦ {title_label}</div>
+          <div class="treatment-text">{treatment}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Warning
-        st.markdown(
-            '<div class="warn" style="margin-top:16px;">'
-            '<span style="font-size:20px;">⚠️</span>'
-            '<span>Best results: a single, clearly-lit leaf centered in frame with a plain background.</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        # Note
+        st.markdown("""
+        <div class="glass warning-banner">
+          <span>⚠</span>
+          <span>This is an AI prediction. For high-stakes treatment decisions, confirm with a certified plant pathologist.</span>
+        </div>
+        """, unsafe_allow_html=True)
 
         # Top 3
-        top3 = np.argsort(probs)[::-1][:3]
-        rows_html = ""
-        for rank, i in enumerate(top3, start=1):
-            c, d = format_class(CLASS_NAMES[i])
-            p = float(probs[i]) * 100
-            rows_html += (
-                f'<div class="row">'
-                f'  <div class="idx">{rank}</div>'
-                f'  <div class="name">{c} — {d}<small>class · {CLASS_NAMES[i]}</small></div>'
-                f'  <div class="rowbar"><span style="width:{max(2,min(100,p)):.1f}%;"></span></div>'
-                f'  <div class="pct">{p:.1f}%</div>'
-                f'</div>'
-            )
-        st.markdown(
-            f'<div class="panel top" style="margin-top:18px;">'
-            f'  <h3>📊 Top 3 Predictions</h3>'
-            f'  {rows_html}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="glass predictions-card">', unsafe_allow_html=True)
+        st.markdown('<div class="predictions-title">✦ Top 3 Predictions</div>', unsafe_allow_html=True)
+        max_pct = top3[0][1] if top3[0][1] > 0 else 1
+        for rank, (name, pct) in enumerate(top3, 1):
+            bar_w = (pct / max_pct) * 100
+            display = name if len(name) <= 42 else name[:40] + "…"
+            c1, c2, c3 = st.columns([0.08, 0.72, 0.20])
+            with c1:
+                st.markdown(f'<div class="pred-rank">{rank}</div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(
+                    f'<div class="pred-name">{display}</div>'
+                    f'<div class="pred-bar-bg"><div class="pred-bar-fill" style="width:{bar_w}%"></div></div>',
+                    unsafe_allow_html=True,
+                )
+            with c3:
+                st.markdown(f'<div class="pred-pct">{pct:.1f}%</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        # Stats strip
-        entropy = float(-np.sum(probs * np.log(probs + 1e-9)))
-        st.markdown(
-            f'<div class="stats">'
-            f'<div class="stat"><div class="ico">🎯</div><div class="k">{confidence:.1f}%</div><div class="v">Top Confidence</div></div>'
-            f'<div class="stat"><div class="ico">🔬</div><div class="k">{len(CLASS_NAMES)}</div><div class="v">Classes Evaluated</div></div>'
-            f'<div class="stat"><div class="ico">📐</div><div class="k">{entropy:.2f}</div><div class="v">Entropy (nats)</div></div>'
-            f'<div class="stat"><div class="ico">🖼</div><div class="k">{IMG_SIZE[0]}²</div><div class="v">Input Resolution</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        # Downloads
+        try:
+            pdf_bytes = build_pdf_report(pil_image, plant or "Plant", disease, top_pct, severity, treatment, top3)
+            dlc1, dlc2 = st.columns(2)
+            with dlc1:
+                st.download_button(
+                    "⬇ Download PDF Report",
+                    data=pdf_bytes,
+                    file_name=f"diagnosis_{(plant or 'plant').lower().replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            with dlc2:
+                txt = (
+                    f"PLANT DISEASE DIAGNOSIS\n\nPlant: {plant}\nDiagnosis: {disease}\n"
+                    f"Confidence: {top_pct:.2f}%\nSeverity: {severity}\n\nTreatment:\n{treatment}\n\n"
+                    "Top 3:\n" + "\n".join([f"  {i+1}. {n} — {p:.2f}%" for i,(n,p) in enumerate(top3)])
+                    + "\n\n— Crafted by Muhammad Rumman Aslam & Zunairah Abdul Rehman"
+                )
+                st.download_button(
+                    "⬇ Download Text Report",
+                    data=txt,
+                    file_name=f"diagnosis_{(plant or 'plant').lower().replace(' ', '_')}.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+        except ImportError:
+            st.info("Install `reportlab` for PDF reports: `pip install reportlab`")
 
-    st.markdown(
-        '<div class="footer">'
-        '🌿 Built with TensorFlow &amp; MobileNetV2'
-        '<span class="dot">•</span> PlantVillage Dataset'
-        '<span class="dot">•</span> 38 Disease Classes'
-        '<span class="dot">•</span> 96.7% Accuracy'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+
+# ─── BOTTOM CREDITS ─────────────────────────────────────────────────────────
+st.markdown("""
+<div class="credits">
+  <div class="credits-label">✦ Designed &amp; Built By ✦</div>
+  <div class="credits-names">
+    Muhammad Rumman Aslam <span class="credits-sep">·</span> Zunairah Abdul Rehman
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ─── TECH FOOTER ────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="app-footer">
+  <div class="footer-item">✦ TensorFlow &amp; MobileNetV2</div>
+  <div class="footer-item">✦ PlantVillage Dataset</div>
+  <div class="footer-item">✦ 38 Disease Classes</div>
+  <div class="footer-item">✦ 96.7% Accuracy</div>
+</div>
+""", unsafe_allow_html=True)
