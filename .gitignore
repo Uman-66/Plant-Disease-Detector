@@ -3,4 +3,3 @@ _pycache_/
 *.pyc
 *.h5
 data/
-models/
