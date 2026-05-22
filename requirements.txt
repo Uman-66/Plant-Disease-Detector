@@ -1,7 +1,9 @@
-tensorflow==2.15.0
-numpy==1.26.4
-opencv-python==4.9.0.80
-matplotlib==3.8.4
-plotly==5.20.0
-streamlit==1.35.0
-scikit-learn==1.4.2
+streamlit
+tensorflow
+numpy
+pillow
+matplotlib
+plotly
+opencv-python-headless
+scikit-learn
+PIL
