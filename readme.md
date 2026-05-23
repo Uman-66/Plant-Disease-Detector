@@ -312,7 +312,7 @@ plant-disease-detector/
 ## Clone Repository
 
 ```bash
-git clone https://github.com/your-username/plant-disease-detector.git
+git clone https://github.com/Uman-66/plant-disease-detector.git
 cd plant-disease-detector
 ```
 
