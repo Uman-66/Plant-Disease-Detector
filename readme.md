@@ -1,3 +1,13 @@
+---
+title: Plant Disease Detector
+emoji: 🌿
+colorFrom: green
+colorTo: blue
+sdk: streamlit
+sdk_version: 1.35.0
+app_file: app/app.py
+pinned: false
+---
 # AI Plant Disease Detector
 
 A deep learning-based web application for detecting and classifying plant diseases from leaf images using transfer learning with MobileNetV2.
