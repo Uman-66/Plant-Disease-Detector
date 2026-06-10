@@ -150,39 +150,12 @@ st.markdown("""
   }
 
   [data-testid="stHeader"] { background: transparent !important; }
-
-  /* ── SIDEBAR CHAT PANEL ── */
   [data-testid="stSidebar"] {
-    background: #04170f !important;
-    border-right: 1px solid rgba(201,168,76,0.18) !important;
-    min-width: 300px !important;
-    max-width: 300px !important;
+    background: var(--bg-2) !important;
+    border-right: 1px solid var(--line) !important;
   }
-  [data-testid="stSidebar"] > div:first-child {
-    padding: 1.4rem 1rem 1rem 1rem !important;
-  }
+  [data-testid="stSidebar"] > div { padding: 1.5rem 1rem !important; }
   [data-testid="stSidebarContent"] { background: transparent !important; }
-  [data-testid="stSidebar"] [data-testid="stChatInput"] {
-    background: rgba(245,240,224,0.05) !important;
-    border: 1px solid rgba(201,168,76,0.25) !important;
-    border-radius: 12px !important;
-  }
-  [data-testid="stSidebar"] [data-testid="stChatInput"] textarea {
-    color: var(--cream) !important;
-    font-size: 0.83rem !important;
-  }
-  [data-testid="stSidebar"] [data-testid="stChatInput"] button {
-    background: rgba(201,168,76,0.2) !important;
-    border-radius: 8px !important;
-  }
-  /* collapse toggle button style */
-  [data-testid="stSidebarCollapseButton"] button {
-    background: rgba(201,168,76,0.12) !important;
-    border: 1px solid rgba(201,168,76,0.25) !important;
-    border-radius: 8px !important;
-    color: var(--gold-2) !important;
-  }
-
   .block-container { padding: 1.6rem 2.4rem 3rem 2.4rem !important; max-width: 1380px !important; position: relative; z-index: 1; }
   #MainMenu, footer, header { visibility: hidden; }
   [data-testid="stToolbar"] { display: none; }
@@ -639,7 +612,7 @@ def build_pdf_report(image: Image.Image, plant, disease, top_pct, severity, trea
     c.drawString(25*mm, 18*mm, "Plant Disease Detector · MobileNetV2 · PlantVillage Dataset · 38 classes · 96.7% accuracy")
     c.drawString(25*mm, 14*mm, "This is an AI prediction — confirm critical decisions with a certified plant pathologist.")
     c.setFillColorRGB(0.788, 0.659, 0.298); c.setFont("Helvetica-Bold", 8)
-    c.drawString(25*mm, 9*mm, "Crafted by Muhammad Rumman Aslam  ·  Zunairah Abdul Rehman")
+    c.drawString(25*mm, 9*mm, "Crafted for Microsoft Agents League Hackathon")
     c.setFillColorRGB(0.788, 0.659, 0.298); c.rect(0, 0, W, 4, fill=1, stroke=0)
 
     c.showPage(); c.save()
@@ -658,90 +631,42 @@ if "sample_choice" not in st.session_state:
     st.session_state.sample_choice = None
 
 
-# ─── SIDEBAR CHAT PANEL ─────────────────────────────────────────────────────
+# ─── SIDEBAR CHAT ───────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
-    <div style="border-bottom:1px solid rgba(201,168,76,0.18); padding-bottom:1rem; margin-bottom:1rem;">
-      <div style="color:#e8c971; font-size:0.72rem; font-weight:600; letter-spacing:0.16em;
-      text-transform:uppercase; margin-bottom:0.3rem;">✦ AI Plant Assistant</div>
-      <div style="color:#9ec0b0; font-size:0.78rem; line-height:1.55;">
-        Diagnose a leaf first, then ask me anything about the disease — treatments, organic options, severity, prevention.
-      </div>
-    </div>
+    <div style="color:var(--gold-2); font-size:0.78rem; font-weight:600;
+    letter-spacing:0.12em; text-transform:uppercase; margin-bottom:0.5rem;">
+    ✦ Ask AI About This Disease</div>
+    <div style="color:var(--muted); font-size:0.8rem; margin-bottom:1rem;
+    line-height:1.5;">Upload a leaf first, then ask follow-up questions here.</div>
     """, unsafe_allow_html=True)
 
-    if st.session_state.chat_context:
-        ctx_parts = st.session_state.chat_context.split(",")
-        plant_ctx = ctx_parts[0].replace("Plant:","").strip() if ctx_parts else ""
-        disease_ctx = ctx_parts[1].replace("Disease:","").strip() if len(ctx_parts) > 1 else ""
-        st.markdown(
-            f'<div style="background:rgba(20,163,122,0.12); border:1px solid rgba(20,163,122,0.3); '
-            f'border-radius:10px; padding:0.6rem 0.8rem; margin-bottom:1rem;">'
-            f'<div style="color:#e8c971; font-size:0.68rem; font-weight:600; letter-spacing:0.1em; '
-            f'text-transform:uppercase; margin-bottom:0.2rem;">Current diagnosis</div>'
-            f'<div style="color:#f5f0e0; font-size:0.82rem; font-weight:600;">{plant_ctx}</div>'
-            f'<div style="color:#9ec0b0; font-size:0.78rem;">{disease_ctx}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-    else:
-        st.markdown(
-            '<div style="background:rgba(245,240,224,0.04); border:1px dashed rgba(201,168,76,0.18); '
-            'border-radius:10px; padding:0.7rem 0.8rem; margin-bottom:1rem; color:#9ec0b0; '
-            'font-size:0.78rem; text-align:center;">Upload a leaf to begin</div>',
-            unsafe_allow_html=True
-        )
-
-    # Chat history
     for msg in st.session_state.chat_messages:
-        is_user = msg["role"] == "user"
-        role_label = "You" if is_user else "✦ AI"
-        label_color = "#f5f0e0" if is_user else "#e8c971"
-        bubble_bg = "rgba(245,240,224,0.05)" if is_user else "rgba(201,168,76,0.07)"
-        bubble_border = "rgba(245,240,224,0.1)" if is_user else "rgba(201,168,76,0.2)"
-        st.markdown(
-            f'<div style="background:{bubble_bg}; border:1px solid {bubble_border}; '
-            f'border-radius:10px; padding:0.55rem 0.75rem; margin-bottom:0.5rem;">'
-            f'<div style="color:{label_color}; font-size:0.68rem; font-weight:600; '
-            f'letter-spacing:0.08em; text-transform:uppercase; margin-bottom:0.25rem;">{role_label}</div>'
-            f'<div style="color:#f5f0e0; font-size:0.82rem; line-height:1.55;">{msg["content"]}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
-    if st.session_state.chat_messages:
-        if st.button("Clear chat", use_container_width=True, key="clear_chat"):
-            st.session_state.chat_messages = []
-            st.rerun()
+        with st.chat_message("user" if msg["role"] == "user" else "assistant"):
+            st.markdown(msg["content"])
 
     user_question = st.chat_input("Ask about this disease...")
     if user_question:
-        if not st.session_state.chat_context:
-            st.session_state.chat_messages.append({"role": "user", "content": user_question})
-            st.session_state.chat_messages.append({"role": "assistant", "content": "Please upload and diagnose a leaf first — I'll have context to answer from."})
+        st.session_state.chat_messages.append({"role": "user", "content": user_question})
+        token = st.secrets.get("GITHUB_TOKEN", "")
+        if token and st.session_state.chat_context:
+            try:
+                system_prompt = f"You are a plant disease expert. The farmer's plant has been diagnosed with: {st.session_state.chat_context}. Answer helpfully and concisely. Be practical and farmer-friendly."
+                history = [{"role": "system", "content": system_prompt}] + st.session_state.chat_messages
+                response = requests.post(
+                    "https://models.inference.ai.azure.com/chat/completions",
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    json={"model": "gpt-4o-mini", "messages": history, "max_tokens": 300},
+                    timeout=15
+                )
+                answer = response.json()["choices"][0]["message"]["content"]
+            except Exception:
+                answer = "Sorry, couldn't connect right now. Try again."
+        elif not st.session_state.chat_context:
+            answer = "Please upload a leaf image first so I have context to answer from."
         else:
-            st.session_state.chat_messages.append({"role": "user", "content": user_question})
-            token = st.secrets.get("GITHUB_TOKEN", "")
-            if token:
-                try:
-                    system_prompt = (
-                        f"You are a plant disease expert assistant. The farmer's plant has been diagnosed with: "
-                        f"{st.session_state.chat_context}. Answer questions helpfully and concisely. "
-                        "Be practical and farmer-friendly. Keep answers under 4 sentences."
-                    )
-                    history = [{"role": "system", "content": system_prompt}] + st.session_state.chat_messages
-                    response = requests.post(
-                        "https://models.inference.ai.azure.com/chat/completions",
-                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                        json={"model": "gpt-4o-mini", "messages": history, "max_tokens": 300},
-                        timeout=15
-                    )
-                    answer = response.json()["choices"][0]["message"]["content"]
-                except Exception:
-                    answer = "Sorry, couldn't connect to AI right now. Please try again."
-            else:
-                answer = "GitHub token not configured."
-            st.session_state.chat_messages.append({"role": "assistant", "content": answer})
+            answer = "GitHub token not configured."
+        st.session_state.chat_messages.append({"role": "assistant", "content": answer})
         st.rerun()
 
 
@@ -755,7 +680,7 @@ st.markdown("""
         <div class="hero-title">Plant Disease Detector</div>
         <div class="hero-subtitle">An elegant AI diagnosis for your garden — 38 disease classes, MobileNetV2</div>
         <div class="byline">
-          ✦ Crafted by <b>Muhammad Rumman Aslam</b> <span class="sep">·</span> <b>Zunairah Abdul Rehman</b>
+          ✦ Crafted for <b>Microsoft Agents League Hackathon</b>
         </div>
       </div>
     </div>
@@ -828,11 +753,11 @@ with left_col:
                     if st.button(name, key=f"sample_{i}", use_container_width=True):
                         st.session_state.sample_choice = path
             if st.session_state.sample_choice and uploaded is None:
-                uploaded = st.session_state.sample_choice
+                uploaded = st.session_state.sample_choice   # pass the path string
 
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    # Normalize input → PIL image
+    # Normalize input → PIL image (fixes sample-click crash)
     image_for_display = None
     pil_image = None
     if uploaded is not None:
@@ -902,8 +827,6 @@ with right_col:
                 st.stop()
 
         top_name, top_pct = top3[0]
-
-        # Confidence threshold
         if top_pct < 60.0:
             st.markdown("""
             <div class="glass warning-banner" style="padding:2rem 1.7rem; text-align:center; margin-top:1rem;">
@@ -913,7 +836,6 @@ with right_col:
             </div>
             """, unsafe_allow_html=True)
             st.stop()
-
         is_healthy = "healthy" in top_name.lower()
         token = st.secrets.get("GITHUB_TOKEN", "")
         plant_tmp, _, disease_tmp = top_name.partition(" — ")
@@ -925,15 +847,12 @@ with right_col:
         diag_class = "healthy" if is_healthy else ""
         plant, _, disease = top_name.partition(" — ")
         disease = disease or top_name
-
-        # Update chat context — reset chat if new disease
-        new_context = f"Plant: {plant}, Disease: {disease}, Confidence: {top_pct:.1f}%"
-        if st.session_state.chat_context != new_context:
-            if st.session_state.chat_context != "":
-                st.session_state.chat_messages = []
-            st.session_state.chat_context = new_context
+        st.session_state.chat_context = f"Plant: {plant}, Disease: {disease}, Confidence: {top_pct:.1f}%"
 
         # Save history
+        if not st.session_state.history or st.session_state.history[-1].get("disease") != disease:
+            st.session_state.chat_messages = []
+
         snap = {"plant": plant or "Plant", "disease": disease, "confidence": top_pct, "severity": severity}
         if not st.session_state.history or st.session_state.history[-1] != snap:
             st.session_state.history.append(snap)
@@ -978,6 +897,7 @@ with right_col:
         </div>
         """, unsafe_allow_html=True)
 
+
         # Top 3
         st.markdown('<div class="glass predictions-card">', unsafe_allow_html=True)
         st.markdown('<div class="predictions-title">✦ Top 3 Predictions</div>', unsafe_allow_html=True)
@@ -1015,7 +935,7 @@ with right_col:
                     f"PLANT DISEASE DIAGNOSIS\n\nPlant: {plant}\nDiagnosis: {disease}\n"
                     f"Confidence: {top_pct:.2f}%\nSeverity: {severity}\n\nTreatment:\n{treatment}\n\n"
                     "Top 3:\n" + "\n".join([f"  {i+1}. {n} — {p:.2f}%" for i,(n,p) in enumerate(top3)])
-                    + "\n\n— Crafted by Muhammad Rumman Aslam & Zunairah Abdul Rehman"
+                    + "\n\n— Crafted for Microsoft Agents League Hackathon"
                 )
                 st.download_button(
                     "⬇ Download Text Report",
@@ -1033,7 +953,7 @@ st.markdown("""
 <div class="credits">
   <div class="credits-label">✦ Crafted for Microsoft Agents League Hackathon ✦</div>
   <div class="credits-names">
-    Muhammad Rumman Aslam <span class="credits-sep">·</span> Zunairah Abdul Rehman
+    Powered by GitHub Models API
   </div>
 </div>
 """, unsafe_allow_html=True)
