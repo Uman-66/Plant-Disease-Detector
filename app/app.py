@@ -156,6 +156,8 @@ st.markdown("""
   }
   [data-testid="stSidebar"] > div { padding: 1.5rem 1rem !important; }
   [data-testid="stSidebarContent"] { background: transparent !important; }
+  [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"] { display: none !important; visibility: hidden !important; }
+  [data-testid="stSidebar"] { min-width: 22rem !important; transform: none !important; visibility: visible !important; }
   .block-container { padding: 1.6rem 2.4rem 3rem 2.4rem !important; max-width: 1380px !important; position: relative; z-index: 1; }
   #MainMenu, footer, header { visibility: hidden; }
   [data-testid="stToolbar"] { display: none; }
@@ -640,6 +642,11 @@ with st.sidebar:
     <div style="color:var(--muted); font-size:0.8rem; margin-bottom:1rem;
     line-height:1.5;">Upload a leaf first, then ask follow-up questions here.</div>
     """, unsafe_allow_html=True)
+
+    if st.session_state.chat_messages:
+        if st.button("🗑 Clear chat", key="clear_chat_btn", use_container_width=True):
+            st.session_state.chat_messages = []
+            st.rerun()
 
     for msg in st.session_state.chat_messages:
         with st.chat_message("user" if msg["role"] == "user" else "assistant"):
