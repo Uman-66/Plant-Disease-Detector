@@ -6,6 +6,30 @@ import os
 import time
 import io
 from datetime import datetime
+import requests
+
+# ─── GITHUB MODELS API ──────────────────────────────────────────────────────
+def get_ai_treatment(plant, disease, token):
+    try:
+        prompt = (
+            "You are an expert plant pathologist. A farmer has uploaded a leaf image and the AI detected:\n"
+            f"Plant: {plant}\n"
+            f"Disease: {disease}\n\n"
+            "Give a clear, practical treatment recommendation in 3-4 sentences. Include:\n"
+            "- What fungicide, pesticide, or action to take\n"
+            "- How to apply it\n"
+            "- Any preventive steps going forward\n"
+            "Be direct and farmer-friendly. Do not add any disclaimers."
+        )
+        response = requests.post(
+            "https://models.inference.ai.azure.com/chat/completions",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "max_tokens": 300},
+            timeout=15,
+        )
+        return response.json()["choices"][0]["message"]["content"]
+    except Exception:
+        return None
 
 # ─── PAGE CONFIG ────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -594,6 +618,10 @@ def build_pdf_report(image: Image.Image, plant, disease, top_pct, severity, trea
 # ─── SESSION STATE ──────────────────────────────────────────────────────────
 if "history" not in st.session_state:
     st.session_state.history = []
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+if "chat_context" not in st.session_state:
+    st.session_state.chat_context = ""
 if "sample_choice" not in st.session_state:
     st.session_state.sample_choice = None
 
@@ -755,14 +783,27 @@ with right_col:
                 st.stop()
 
         top_name, top_pct = top3[0]
+        if top_pct < 60.0:
+            st.markdown("""
+            <div class="glass warning-banner" style="padding:2rem 1.7rem; text-align:center; margin-top:1rem;">
+              <div style="font-size:2.5rem; margin-bottom:0.8rem;">🍃</div>
+              <div style="font-family:'Cormorant Garamond',serif; font-size:1.6rem; color:var(--cream); margin-bottom:0.5rem;">No clear disease detected</div>
+              <div style="color:var(--muted); font-size:0.9rem;">Confidence too low to make a reliable diagnosis. Please upload a clear, well-lit, close-up photo of a single leaf against a plain background.</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
         is_healthy = "healthy" in top_name.lower()
-        treatment = TREATMENTS.get(top_name, "Consult a local plant pathologist for tailored advice.")
+        token = st.secrets.get("GITHUB_TOKEN", "")
+        plant_tmp, _, disease_tmp = top_name.partition(" — ")
+        ai_treatment = get_ai_treatment(plant_tmp or top_name, disease_tmp or top_name, token) if token else None
+        treatment = ai_treatment if ai_treatment else TREATMENTS.get(top_name, "Consult a local plant pathologist for tailored advice.")
         severity = severity_for(top_name)
         sev_color = SEVERITY_COLOR.get(severity, "#c9a84c")
         sev_pos = SEVERITY_POS.get(severity, 50)
         diag_class = "healthy" if is_healthy else ""
         plant, _, disease = top_name.partition(" — ")
         disease = disease or top_name
+        st.session_state.chat_context = f"Plant: {plant}, Disease: {disease}, Confidence: {top_pct:.1f}%"
 
         # Save history
         snap = {"plant": plant or "Plant", "disease": disease, "confidence": top_pct, "severity": severity}
@@ -808,6 +849,41 @@ with right_col:
           <span>This is an AI prediction. For high-stakes treatment decisions, confirm with a certified plant pathologist.</span>
         </div>
         """, unsafe_allow_html=True)
+
+        # Mini AI chatbot
+        st.markdown("""
+        <div class="glass treatment-card">
+          <div class="treatment-title">✦ Ask AI About This Disease</div>
+          <div style="color:var(--muted); font-size:0.82rem; margin-bottom:1rem;">Ask follow-up questions about treatment, prevention, organic options, etc.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        for msg in st.session_state.chat_messages:
+            role_label = "You" if msg["role"] == "user" else "✦ AI"
+            color = "var(--cream)" if msg["role"] == "user" else "var(--gold-2)"
+            st.markdown(f'<div style="padding:0.5rem 0; border-bottom:1px dashed var(--line);"><span style="color:{color}; font-weight:600; font-size:0.8rem;">{role_label}</span><br><span style="color:var(--cream); font-size:0.88rem;">{msg["content"]}</span></div>', unsafe_allow_html=True)
+
+        user_question = st.chat_input("Ask about this disease...")
+        if user_question:
+            st.session_state.chat_messages.append({"role": "user", "content": user_question})
+            token = st.secrets.get("GITHUB_TOKEN", "")
+            if token:
+                try:
+                    system_prompt = f"You are a plant disease expert. The farmer's plant has been diagnosed with: {st.session_state.chat_context}. Answer questions helpfully and concisely. Be practical and farmer-friendly."
+                    history = [{"role": "system", "content": system_prompt}] + st.session_state.chat_messages
+                    response = requests.post(
+                        "https://models.inference.ai.azure.com/chat/completions",
+                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                        json={"model": "gpt-4o-mini", "messages": history, "max_tokens": 300},
+                        timeout=15
+                    )
+                    answer = response.json()["choices"][0]["message"]["content"]
+                except Exception:
+                    answer = "Sorry, I couldn't connect to the AI right now. Please try again."
+            else:
+                answer = "GitHub token not configured."
+            st.session_state.chat_messages.append({"role": "assistant", "content": answer})
+            st.rerun()
 
         # Top 3
         st.markdown('<div class="glass predictions-card">', unsafe_allow_html=True)
@@ -862,7 +938,7 @@ with right_col:
 # ─── BOTTOM CREDITS ─────────────────────────────────────────────────────────
 st.markdown("""
 <div class="credits">
-  <div class="credits-label">✦ Designed &amp; Built By ✦</div>
+  <div class="credits-label">✦ Crafted for Microsoft Agents League Hackathon ✦</div>
   <div class="credits-names">
     Muhammad Rumman Aslam <span class="credits-sep">·</span> Zunairah Abdul Rehman
   </div>
@@ -872,7 +948,7 @@ st.markdown("""
 # ─── TECH FOOTER ────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="app-footer">
-  <div class="footer-item">✦ TensorFlow &amp; MobileNetV2</div>
+  <div class="footer-item">✦ Powered by GitHub Models API</div>
   <div class="footer-item">✦ PlantVillage Dataset</div>
   <div class="footer-item">✦ 38 Disease Classes</div>
   <div class="footer-item">✦ 96.7% Accuracy</div>
