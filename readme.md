@@ -28,7 +28,7 @@
 
 | | Link |
 |---|---|
-|  **Demo Video** | [Watch on YouTube](YOUR_YOUTUBE_LINK_HERE) |
+|  **Demo Video** | [Watch on YouTube](https://youtu.be/6Ibii7kh0Ww?si=Y_MMYAcWKieAPFRj) |
 |  **Live App** | [plant-disease-detector-rumman.streamlit.app](https://plant-disease-detector-rumman.streamlit.app) |
 |  **W&B Training Dashboard** | [View Experiments](https://wandb.ai/uman66-meta/plant-disease-detector/workspace?nw=nwuseruman66) |
 |  **Dataset** | [PlantVillage on Kaggle](https://www.kaggle.com/datasets/abdallahalidev/plantvillage-dataset) |
