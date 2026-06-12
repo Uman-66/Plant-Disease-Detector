@@ -422,7 +422,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 | Name | Role | Microsoft Learn Username |
 |---|---|---|
-| Muhammad Rumman Aslam | ML Engineering, Backend, Deployment | Muhamad Rumman Aslam |
+| Muhammad Rumman Aslam | ML Engineering, Backend, Deployment | Rumman] |
 | Shazal Inaam | UI/UX, Frontend, Testing & maintainance | Shazal Inaam |
 
 > Microsoft Learn usernames are required per the [official hackathon rules](https://github.com/microsoft/Agents-League-AISF-Regulations).
